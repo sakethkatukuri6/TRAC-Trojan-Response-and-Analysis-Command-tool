@@ -1,0 +1,417 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/contract/analysis_result.schema.json",
+  "title": "AnalysisResult",
+  "description": "Shared contract for the malware/Trojan analysis platform. Each module writes ONLY its own section (see pipeline/state_machine.yaml). M7 validates on every write. Samples are referenced by vault_id, never by file path.",
+  "type": "object",
+  "required": ["contract_version", "analysis_id", "sample", "pipeline"],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": { "type": "string", "pattern": "^1\\.\\d+\\.\\d+$" },
+    "analysis_id": { "$ref": "#/$defs/uuid" },
+    "sample":   { "$ref": "#/$defs/sample" },
+    "pipeline": { "$ref": "#/$defs/pipeline" },
+    "static":   { "$ref": "#/$defs/static" },
+    "dynamic":  { "$ref": "#/$defs/dynamic" },
+    "iocs":     { "$ref": "#/$defs/iocs" },
+    "detections": { "$ref": "#/$defs/detections" },
+    "score":    { "$ref": "#/$defs/score" },
+    "verdict":  { "$ref": "#/$defs/verdict" },
+    "response_actions": { "$ref": "#/$defs/response_actions" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "pipeline": { "properties": { "status": { "const": "complete" } }, "required": ["status"] } } },
+      "then": { "required": ["static", "dynamic", "iocs", "detections", "score", "verdict", "response_actions"] }
+    },
+    {
+      "if": { "required": ["verdict"], "properties": { "verdict": { "properties": { "label": { "enum": ["suspicious", "malicious"] } }, "required": ["label"] } } },
+      "then": { "required": ["score"] }
+    }
+  ],
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "md5": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "severity": { "enum": ["info", "low", "medium", "high", "critical"] },
+    "attack_id": { "type": "string", "pattern": "^T\\d{4}(\\.\\d{3})?$" },
+    "stage_status": { "enum": ["pending", "running", "done", "failed", "skipped"] },
+
+    "pipeline": {
+      "type": "object",
+      "required": ["status", "stages"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["received", "static", "dynamic", "iocs", "scoring", "response", "report", "complete", "failed", "dead_letter"] },
+        "stages": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ingest":   { "$ref": "#/$defs/stage_status" },
+            "static":   { "$ref": "#/$defs/stage_status" },
+            "dynamic":  { "$ref": "#/$defs/stage_status" },
+            "iocs":     { "$ref": "#/$defs/stage_status" },
+            "scoring":  { "$ref": "#/$defs/stage_status" },
+            "response": { "$ref": "#/$defs/stage_status" },
+            "report":   { "$ref": "#/$defs/stage_status" }
+          }
+        },
+        "retries": { "type": "integer", "minimum": 0 },
+        "errors": { "type": "array", "items": { "$ref": "#/$defs/error" } }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["stage", "code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "stage": { "type": "string" },
+        "code": { "type": "string", "pattern": "^[A-Z0-9_]+$" },
+        "message": { "type": "string", "maxLength": 1000 },
+        "at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+
+    "sample": {
+      "type": "object",
+      "description": "Owner: M1. No filesystem path allowed; downstream modules fetch bytes via vault_id.",
+      "required": ["vault_id", "sha256", "md5", "size_bytes", "file_type", "original_name", "received_at", "stored_defanged", "stored_encrypted"],
+      "additionalProperties": false,
+      "properties": {
+        "vault_id": { "$ref": "#/$defs/uuid" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "md5": { "$ref": "#/$defs/md5" },
+        "sha1": { "$ref": "#/$defs/sha1" },
+        "ssdeep": { "type": "string" },
+        "size_bytes": { "type": "integer", "minimum": 1, "maximum": 104857600 },
+        "file_type": { "enum": ["pe", "elf", "macho", "office", "pdf", "script", "archive", "other"] },
+        "mime": { "type": "string" },
+        "original_name": { "type": "string", "maxLength": 255, "pattern": "^[A-Za-z0-9._ -]+$", "description": "Sanitized: no path separators or control characters." },
+        "received_at": { "$ref": "#/$defs/timestamp" },
+        "submitter": { "type": "string" },
+        "stored_defanged": { "const": true },
+        "stored_encrypted": { "const": true },
+        "duplicate_of": { "$ref": "#/$defs/uuid" },
+        "clamav_result": { "enum": ["clean", "detected", "error", "not_run"] }
+      }
+    },
+
+    "static": {
+      "type": "object",
+      "description": "Owner: M2.",
+      "required": ["status", "file_class"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "$ref": "#/$defs/stage_status" },
+        "file_class": { "enum": ["pe", "elf", "macho", "office", "pdf", "script", "archive", "other"] },
+        "entropy": { "type": "number", "minimum": 0, "maximum": 8 },
+        "packers": { "type": "array", "items": { "type": "string" } },
+        "pe": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "compile_time": { "$ref": "#/$defs/timestamp" },
+            "is_dll": { "type": "boolean" },
+            "signed": { "type": "boolean" },
+            "imphash": { "type": "string" },
+            "sections": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "entropy"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string" },
+                  "virtual_size": { "type": "integer", "minimum": 0 },
+                  "raw_size": { "type": "integer", "minimum": 0 },
+                  "entropy": { "type": "number", "minimum": 0, "maximum": 8 }
+                }
+              }
+            },
+            "imports": { "type": "array", "items": { "type": "string" } },
+            "exports": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "macros": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": { "name": { "type": "string" }, "suspicious_keywords": { "type": "array", "items": { "type": "string" } } }
+          }
+        },
+        "strings": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "count": { "type": "integer", "minimum": 0 },
+            "interesting": { "type": "array", "items": { "type": "string", "maxLength": 512 } },
+            "deobfuscated_count": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "yara_matches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["rule"],
+            "additionalProperties": false,
+            "properties": {
+              "rule": { "type": "string" },
+              "namespace": { "type": "string" },
+              "tags": { "type": "array", "items": { "type": "string" } },
+              "meta": { "type": "object" }
+            }
+          }
+        },
+        "embedded_urls": { "type": "array", "items": { "type": "string" }, "description": "Must be defanged." }
+      }
+    },
+
+    "dynamic": {
+      "type": "object",
+      "description": "Owner: M3. Normalized from sandbox output.",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "$ref": "#/$defs/stage_status" },
+        "sandbox": {
+          "type": "object",
+          "required": ["engine", "guest_os", "run_id", "network_mode", "reverted"],
+          "additionalProperties": false,
+          "properties": {
+            "engine": { "enum": ["capev2", "cuckoo3", "custom"] },
+            "guest_os": { "type": "string" },
+            "run_id": { "type": "string" },
+            "duration_s": { "type": "integer", "minimum": 0 },
+            "timeout_s": { "type": "integer", "minimum": 1 },
+            "network_mode": { "enum": ["isolated", "simulated_internet"], "description": "Real internet is not permitted." },
+            "reverted": { "type": "boolean", "description": "Snapshot revert completed after run." }
+          }
+        },
+        "process_tree": { "type": "array", "items": { "$ref": "#/$defs/process" } },
+        "file_events":     { "type": "array", "items": { "$ref": "#/$defs/event_item" } },
+        "registry_events": { "type": "array", "items": { "$ref": "#/$defs/event_item" } },
+        "mutexes": { "type": "array", "items": { "type": "string" } },
+        "dropped_files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["sha256"],
+            "additionalProperties": false,
+            "properties": {
+              "sha256": { "$ref": "#/$defs/sha256" },
+              "name": { "type": "string" },
+              "size_bytes": { "type": "integer", "minimum": 0 },
+              "vault_id": { "$ref": "#/$defs/uuid" }
+            }
+          }
+        },
+        "api_summary": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "network_summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dns_queries": { "type": "integer", "minimum": 0 },
+            "http_requests": { "type": "integer", "minimum": 0 },
+            "tcp_connections": { "type": "integer", "minimum": 0 },
+            "pcap_vault_id": { "$ref": "#/$defs/uuid" }
+          }
+        }
+      }
+    },
+    "process": {
+      "type": "object",
+      "required": ["pid", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "pid": { "type": "integer", "minimum": 0 },
+        "ppid": { "type": "integer", "minimum": 0 },
+        "name": { "type": "string" },
+        "command_line": { "type": "string" },
+        "started_offset_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "event_item": {
+      "type": "object",
+      "required": ["action", "target"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "enum": ["create", "modify", "delete", "read", "rename"] },
+        "target": { "type": "string" },
+        "pid": { "type": "integer" },
+        "offset_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "iocs": {
+      "type": "object",
+      "description": "Owner: M4. All values defanged (hxxp://, [.]).",
+      "required": ["status", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "$ref": "#/$defs/stage_status" },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "value", "source", "confidence"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "enum": ["domain", "ip", "url", "sha256", "md5", "mutex", "registry_key", "email", "filepath", "user_agent"] },
+              "value": { "type": "string", "minLength": 1, "maxLength": 2048 },
+              "source": { "enum": ["static_strings", "dynamic", "dropped_file", "pcap", "zeek"] },
+              "confidence": { "$ref": "#/$defs/confidence" },
+              "first_seen": { "$ref": "#/$defs/timestamp" }
+            }
+          }
+        },
+        "attack_techniques": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "tactic"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "$ref": "#/$defs/attack_id" },
+              "tactic": { "type": "string" },
+              "evidence": { "type": "string", "maxLength": 500 }
+            }
+          }
+        },
+        "beacons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["destination", "interval_s"],
+            "additionalProperties": false,
+            "properties": {
+              "destination": { "type": "string" },
+              "interval_s": { "type": "number", "exclusiveMinimum": 0 },
+              "jitter": { "type": "number", "minimum": 0, "maximum": 1 },
+              "count": { "type": "integer", "minimum": 2 }
+            }
+          }
+        }
+      }
+    },
+
+    "detections": {
+      "type": "object",
+      "description": "Owner: M5.",
+      "required": ["status", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "$ref": "#/$defs/stage_status" },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["rule_id", "kind", "severity"],
+            "additionalProperties": false,
+            "properties": {
+              "rule_id": { "type": "string" },
+              "kind": { "enum": ["yara", "sigma", "behavior", "intel", "ml"] },
+              "severity": { "$ref": "#/$defs/severity" },
+              "description": { "type": "string" },
+              "attack_ids": { "type": "array", "items": { "$ref": "#/$defs/attack_id" } },
+              "tags": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "intel_hits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["provider", "indicator", "result"],
+            "additionalProperties": false,
+            "properties": {
+              "provider": { "enum": ["virustotal", "malwarebazaar", "otx", "misp"] },
+              "indicator": { "type": "string" },
+              "result": { "enum": ["known_malicious", "known_clean", "unknown", "rate_limited", "error"] },
+              "cached": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+
+    "score": {
+      "type": "object",
+      "description": "Owner: M5.",
+      "required": ["value", "method", "components"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "type": "number", "minimum": 0, "maximum": 100 },
+        "method": { "enum": ["weighted_rules_v1", "ml_v2", "ensemble"] },
+        "model_version": { "type": "string" },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "weight", "contribution"],
+            "additionalProperties": false,
+            "properties": { "name": { "type": "string" }, "weight": { "type": "number", "minimum": 0 }, "contribution": { "type": "number" } }
+          }
+        }
+      }
+    },
+
+    "verdict": {
+      "type": "object",
+      "description": "Owner: M5.",
+      "required": ["label", "severity", "confidence", "explanation"],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "enum": ["benign", "suspicious", "malicious", "unknown"] },
+        "severity": { "$ref": "#/$defs/severity" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "family_guess": { "type": "string" },
+        "behavior_tags": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9_]+$" } },
+        "explanation": { "type": "array", "minItems": 1, "items": { "type": "string", "maxLength": 500 } }
+      }
+    },
+
+    "response_actions": {
+      "type": "array",
+      "description": "Owner: M6. Destructive actions in real mode require approval.",
+      "items": {
+        "type": "object",
+        "required": ["action_id", "type", "target", "mode", "status", "approval"],
+        "additionalProperties": false,
+        "properties": {
+          "action_id": { "$ref": "#/$defs/uuid" },
+          "type": { "enum": ["quarantine", "block_hash", "block_domain", "block_ip", "isolate_host", "open_ticket", "notify", "export_iocs"] },
+          "target": { "type": "string" },
+          "mode": { "enum": ["dry_run", "real"] },
+          "status": { "enum": ["proposed", "awaiting_approval", "approved", "executed", "rejected", "failed", "expired"] },
+          "playbook": { "type": "string" },
+          "approval": {
+            "type": "object",
+            "required": ["required"],
+            "additionalProperties": false,
+            "properties": {
+              "required": { "type": "boolean" },
+              "approved_by": { "type": "string" },
+              "approved_at": { "$ref": "#/$defs/timestamp" }
+            }
+          },
+          "executed_at": { "$ref": "#/$defs/timestamp" },
+          "audit_ref": { "type": "string" }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "type": { "enum": ["isolate_host", "block_ip", "block_domain", "quarantine"] }, "mode": { "const": "real" } }, "required": ["type", "mode"] },
+            "then": { "properties": { "approval": { "properties": { "required": { "const": true } } } } }
+          },
+          {
+            "if": { "properties": { "status": { "const": "executed" } }, "required": ["status"] },
+            "then": { "required": ["executed_at", "audit_ref"] }
+          }
+        ]
+      }
+    }
+  }
+}

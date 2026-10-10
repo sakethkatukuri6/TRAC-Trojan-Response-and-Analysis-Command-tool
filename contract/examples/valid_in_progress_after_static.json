@@ -1,0 +1,53 @@
+{
+  "contract_version": "1.0.0",
+  "analysis_id": "00000001-0000-4000-8000-000000000001",
+  "sample": {
+    "vault_id": "00000001-0000-4000-8000-000000000001",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "md5": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "size_bytes": 18432,
+    "file_type": "pe",
+    "original_name": "hello_test.exe",
+    "received_at": "2026-10-10T09:00:00Z",
+    "submitter": "analyst1",
+    "stored_defanged": true,
+    "stored_encrypted": true,
+    "clamav_result": "not_run"
+  },
+  "static": {
+    "status": "done",
+    "file_class": "pe",
+    "entropy": 5.1,
+    "packers": [],
+    "pe": {
+      "is_dll": false,
+      "signed": true,
+      "sections": [
+        {
+          "name": ".text",
+          "entropy": 6.0
+        },
+        {
+          "name": ".data",
+          "entropy": 3.2
+        }
+      ],
+      "imports": [
+        "KERNEL32.dll!ExitProcess"
+      ]
+    },
+    "strings": {
+      "count": 212,
+      "interesting": []
+    },
+    "yara_matches": []
+  },
+  "pipeline": {
+    "status": "dynamic",
+    "stages": {
+      "ingest": "done",
+      "static": "done",
+      "dynamic": "running"
+    }
+  }
+}

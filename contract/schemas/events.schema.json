@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/contract/events.schema.json",
+  "title": "PipelineEvent",
+  "description": "Queue message envelope. Events carry IDs only: never file paths or sample bytes.",
+  "type": "object",
+  "required": ["event_id", "type", "analysis_id", "vault_id", "emitted_at", "producer", "contract_version", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+    "type": { "enum": ["sample.received", "static.done", "dynamic.done", "iocs.done", "scoring.done", "response.done", "report.done", "stage.failed"] },
+    "analysis_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+    "vault_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+    "emitted_at": { "type": "string", "format": "date-time" },
+    "producer": { "enum": ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8"] },
+    "contract_version": { "type": "string", "pattern": "^1\\.\\d+\\.\\d+$" },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "payload": { "type": "object" }
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "sample.received" } } },
+      "then": { "properties": { "producer": { "const": "M1" }, "payload": { "type": "object", "required": ["sha256", "file_type"], "additionalProperties": false, "properties": { "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "file_type": { "type": "string" }, "duplicate": { "type": "boolean" } } } } } },
+    { "if": { "properties": { "type": { "const": "static.done" } } },
+      "then": { "properties": { "producer": { "const": "M2" }, "payload": { "type": "object", "required": ["section"], "additionalProperties": false, "properties": { "section": { "const": "static" }, "yara_match_count": { "type": "integer", "minimum": 0 } } } } } },
+    { "if": { "properties": { "type": { "const": "dynamic.done" } } },
+      "then": { "properties": { "producer": { "const": "M3" }, "payload": { "type": "object", "required": ["section", "reverted"], "additionalProperties": false, "properties": { "section": { "const": "dynamic" }, "reverted": { "type": "boolean" } } } } } },
+    { "if": { "properties": { "type": { "const": "iocs.done" } } },
+      "then": { "properties": { "producer": { "const": "M4" }, "payload": { "type": "object", "required": ["section", "ioc_count"], "additionalProperties": false, "properties": { "section": { "const": "iocs" }, "ioc_count": { "type": "integer", "minimum": 0 } } } } } },
+    { "if": { "properties": { "type": { "const": "scoring.done" } } },
+      "then": { "properties": { "producer": { "const": "M5" }, "payload": { "type": "object", "required": ["section", "label", "severity"], "additionalProperties": false, "properties": { "section": { "const": "verdict" }, "label": { "enum": ["benign", "suspicious", "malicious", "unknown"] }, "severity": { "enum": ["info", "low", "medium", "high", "critical"] } } } } } },
+    { "if": { "properties": { "type": { "const": "response.done" } } },
+      "then": { "properties": { "producer": { "const": "M6" }, "payload": { "type": "object", "required": ["section", "action_count"], "additionalProperties": false, "properties": { "section": { "const": "response_actions" }, "action_count": { "type": "integer", "minimum": 0 }, "awaiting_approval": { "type": "integer", "minimum": 0 } } } } } },
+    { "if": { "properties": { "type": { "const": "report.done" } } },
+      "then": { "properties": { "producer": { "const": "M8" }, "payload": { "type": "object", "required": ["report_vault_id"], "additionalProperties": false, "properties": { "report_vault_id": { "type": "string" } } } } } },
+    { "if": { "properties": { "type": { "const": "stage.failed" } } },
+      "then": { "properties": { "payload": { "type": "object", "required": ["stage", "code", "retryable"], "additionalProperties": false, "properties": { "stage": { "type": "string" }, "code": { "type": "string", "pattern": "^[A-Z0-9_]+$" }, "retryable": { "type": "boolean" }, "message": { "type": "string", "maxLength": 1000 } } } } } }
+  ]
+}

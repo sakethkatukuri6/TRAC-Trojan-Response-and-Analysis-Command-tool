@@ -1,0 +1,41 @@
+# Pipeline state machine + section ownership. M7 enforces both.
+contract_version: "1.0.0"
+
+section_owners:        # who may WRITE each section of analysis_result
+  sample: M1
+  static: M2
+  dynamic: M3
+  iocs: M4
+  detections: M5
+  score: M5
+  verdict: M5
+  response_actions: M6
+  pipeline: M7         # only the orchestrator mutates pipeline status
+
+writer_rules:
+  - M7 is the only module that writes to the database.
+  - A module that writes a section it does not own is rejected with 403 SECTION_NOT_OWNED.
+  - Modules locate samples via vault_id only; file paths are never exchanged.
+
+states: [received, static, dynamic, iocs, scoring, response, report, complete, failed, dead_letter]
+
+transitions:
+  - {from: received, event: sample.received, to: static,   consumer: M2, writes: sample}
+  - {from: static,   event: static.done,     to: dynamic,  consumer: M3, writes: static}
+  - {from: dynamic,  event: dynamic.done,    to: iocs,     consumer: M4, writes: dynamic}
+  - {from: iocs,     event: iocs.done,       to: scoring,  consumer: M5, writes: iocs}
+  - {from: scoring,  event: scoring.done,    to: response, consumer: M6, writes: [detections, score, verdict]}
+  - {from: response, event: response.done,   to: report,   consumer: M8, writes: response_actions}
+  - {from: report,   event: report.done,     to: complete, consumer: M7, writes: null}
+
+failure:
+  event: stage.failed
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    only_if: payload.retryable == true
+  on_exhausted: dead_letter
+  from_any: [static, dynamic, iocs, scoring, response, report]
+
+skippable_stages:   # a stage may emit its .done event with status "skipped"
+  - dynamic         # e.g. non-executable file types

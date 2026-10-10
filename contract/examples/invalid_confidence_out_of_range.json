@@ -1,0 +1,299 @@
+{
+  "contract_version": "1.0.0",
+  "analysis_id": "00000003-0000-4000-8000-000000000003",
+  "sample": {
+    "vault_id": "00000003-0000-4000-8000-000000000003",
+    "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "md5": "dddddddddddddddddddddddddddddddd",
+    "size_bytes": 245760,
+    "file_type": "pe",
+    "original_name": "invoice_synthetic.exe",
+    "received_at": "2026-10-10T09:00:00Z",
+    "submitter": "analyst1",
+    "stored_defanged": true,
+    "stored_encrypted": true,
+    "clamav_result": "not_run"
+  },
+  "pipeline": {
+    "status": "complete",
+    "stages": {
+      "ingest": "done",
+      "static": "done",
+      "dynamic": "done",
+      "iocs": "done",
+      "scoring": "done",
+      "response": "done",
+      "report": "done"
+    }
+  },
+  "static": {
+    "status": "done",
+    "file_class": "pe",
+    "entropy": 7.6,
+    "packers": [
+      "UPX"
+    ],
+    "pe": {
+      "signed": false,
+      "sections": [
+        {
+          "name": ".text",
+          "entropy": 7.8
+        },
+        {
+          "name": "UPX1",
+          "entropy": 7.9
+        }
+      ],
+      "imports": [
+        "WININET.dll!InternetOpenA",
+        "ADVAPI32.dll!RegSetValueExA"
+      ]
+    },
+    "strings": {
+      "count": 88,
+      "interesting": [
+        "hxxp://c2[.]example/gate"
+      ],
+      "deobfuscated_count": 14
+    },
+    "yara_matches": [
+      {
+        "rule": "SYNTH_Loader_Generic",
+        "namespace": "trojan",
+        "tags": [
+          "loader"
+        ]
+      }
+    ],
+    "embedded_urls": [
+      "hxxp://c2[.]example/gate"
+    ]
+  },
+  "dynamic": {
+    "status": "done",
+    "sandbox": {
+      "engine": "capev2",
+      "guest_os": "win10-x64",
+      "run_id": "run-0003",
+      "duration_s": 120,
+      "timeout_s": 120,
+      "network_mode": "simulated_internet",
+      "reverted": true
+    },
+    "process_tree": [
+      {
+        "pid": 2100,
+        "ppid": 900,
+        "name": "invoice_synthetic.exe"
+      },
+      {
+        "pid": 2144,
+        "ppid": 2100,
+        "name": "cmd.exe",
+        "command_line": "cmd.exe /c whoami"
+      }
+    ],
+    "file_events": [
+      {
+        "action": "create",
+        "target": "%APPDATA%\\svc\\helper.exe",
+        "pid": 2100
+      }
+    ],
+    "registry_events": [
+      {
+        "action": "modify",
+        "target": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Helper",
+        "pid": 2100
+      }
+    ],
+    "mutexes": [
+      "Global\\SYNTH_MTX_01"
+    ],
+    "dropped_files": [
+      {
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "name": "helper.exe",
+        "size_bytes": 51200
+      }
+    ],
+    "api_summary": {
+      "InternetOpenA": 6,
+      "RegSetValueExA": 1
+    },
+    "network_summary": {
+      "dns_queries": 4,
+      "http_requests": 6,
+      "tcp_connections": 6
+    }
+  },
+  "iocs": {
+    "status": "done",
+    "items": [
+      {
+        "type": "domain",
+        "value": "c2[.]example",
+        "source": "pcap",
+        "confidence": 1.7
+      },
+      {
+        "type": "ip",
+        "value": "192[.]0[.]2[.]10",
+        "source": "pcap",
+        "confidence": 0.8
+      },
+      {
+        "type": "url",
+        "value": "hxxp://c2[.]example/gate",
+        "source": "static_strings",
+        "confidence": 0.85
+      },
+      {
+        "type": "mutex",
+        "value": "Global\\SYNTH_MTX_01",
+        "source": "dynamic",
+        "confidence": 0.7
+      },
+      {
+        "type": "registry_key",
+        "value": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Helper",
+        "source": "dynamic",
+        "confidence": 0.9
+      }
+    ],
+    "attack_techniques": [
+      {
+        "id": "T1547.001",
+        "tactic": "persistence",
+        "evidence": "Run key written"
+      },
+      {
+        "id": "T1071.001",
+        "tactic": "command-and-control",
+        "evidence": "Periodic HTTP to c2[.]example"
+      }
+    ],
+    "beacons": [
+      {
+        "destination": "c2[.]example",
+        "interval_s": 20,
+        "jitter": 0.1,
+        "count": 6
+      }
+    ]
+  },
+  "detections": {
+    "status": "done",
+    "items": [
+      {
+        "rule_id": "SYNTH_Loader_Generic",
+        "kind": "yara",
+        "severity": "high",
+        "attack_ids": [
+          "T1027"
+        ],
+        "tags": [
+          "loader"
+        ]
+      },
+      {
+        "rule_id": "sigma_runkey_persistence",
+        "kind": "sigma",
+        "severity": "medium",
+        "attack_ids": [
+          "T1547.001"
+        ]
+      },
+      {
+        "rule_id": "behavior_c2_beaconing",
+        "kind": "behavior",
+        "severity": "high",
+        "attack_ids": [
+          "T1071.001"
+        ]
+      }
+    ],
+    "intel_hits": [
+      {
+        "provider": "malwarebazaar",
+        "indicator": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "result": "unknown"
+      }
+    ]
+  },
+  "score": {
+    "value": 88,
+    "method": "ensemble",
+    "model_version": "ens-0.1",
+    "components": [
+      {
+        "name": "static_findings",
+        "weight": 0.3,
+        "contribution": 24
+      },
+      {
+        "name": "behaviors",
+        "weight": 0.5,
+        "contribution": 50
+      },
+      {
+        "name": "ml",
+        "weight": 0.2,
+        "contribution": 14
+      }
+    ]
+  },
+  "verdict": {
+    "label": "malicious",
+    "severity": "high",
+    "confidence": 0.91,
+    "family_guess": "generic_loader",
+    "behavior_tags": [
+      "persistence",
+      "c2_beaconing",
+      "packed"
+    ],
+    "explanation": [
+      "Packed (UPX) with high-entropy sections",
+      "Run-key persistence",
+      "Periodic HTTP beaconing at ~20s interval"
+    ]
+  },
+  "response_actions": [
+    {
+      "action_id": "0000001e-0000-4000-8000-00000000001e",
+      "type": "block_hash",
+      "target": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "mode": "dry_run",
+      "status": "proposed",
+      "playbook": "trojan_generic",
+      "approval": {
+        "required": false
+      }
+    },
+    {
+      "action_id": "0000001f-0000-4000-8000-00000000001f",
+      "type": "block_domain",
+      "target": "c2[.]example",
+      "mode": "real",
+      "status": "awaiting_approval",
+      "playbook": "trojan_generic",
+      "approval": {
+        "required": true
+      }
+    },
+    {
+      "action_id": "00000020-0000-4000-8000-000000000020",
+      "type": "export_iocs",
+      "target": "stix",
+      "mode": "real",
+      "status": "executed",
+      "approval": {
+        "required": false
+      },
+      "executed_at": "2026-10-10T09:10:00Z",
+      "audit_ref": "audit-0003"
+    }
+  ]
+}

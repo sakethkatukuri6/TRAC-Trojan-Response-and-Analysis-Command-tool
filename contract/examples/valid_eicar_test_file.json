@@ -1,0 +1,110 @@
+{
+  "contract_version": "1.0.0",
+  "analysis_id": "00000002-0000-4000-8000-000000000002",
+  "sample": {
+    "vault_id": "00000002-0000-4000-8000-000000000002",
+    "sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+    "md5": "44d88612fea8a8f36de82e1278abb02f",
+    "size_bytes": 68,
+    "file_type": "other",
+    "original_name": "eicar.com",
+    "received_at": "2026-10-10T09:00:00Z",
+    "submitter": "analyst1",
+    "stored_defanged": true,
+    "stored_encrypted": true,
+    "clamav_result": "detected",
+    "sha1": "3395856ce81f2b7382dee72602f798b642f14140"
+  },
+  "pipeline": {
+    "status": "complete",
+    "stages": {
+      "ingest": "done",
+      "static": "done",
+      "dynamic": "skipped",
+      "iocs": "done",
+      "scoring": "done",
+      "response": "done",
+      "report": "done"
+    }
+  },
+  "static": {
+    "status": "done",
+    "file_class": "other",
+    "entropy": 4.8,
+    "yara_matches": [
+      {
+        "rule": "EICAR_Test_File",
+        "namespace": "test",
+        "tags": [
+          "test"
+        ]
+      }
+    ]
+  },
+  "dynamic": {
+    "status": "skipped"
+  },
+  "iocs": {
+    "status": "done",
+    "items": [
+      {
+        "type": "sha256",
+        "value": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+        "source": "static_strings",
+        "confidence": 1.0
+      }
+    ]
+  },
+  "detections": {
+    "status": "done",
+    "items": [
+      {
+        "rule_id": "EICAR_Test_File",
+        "kind": "yara",
+        "severity": "info",
+        "description": "Standard AV test file; not real malware",
+        "tags": [
+          "test"
+        ]
+      }
+    ]
+  },
+  "score": {
+    "value": 40,
+    "method": "weighted_rules_v1",
+    "components": [
+      {
+        "name": "static_findings",
+        "weight": 1.0,
+        "contribution": 40
+      }
+    ]
+  },
+  "verdict": {
+    "label": "suspicious",
+    "severity": "low",
+    "confidence": 0.99,
+    "family_guess": "EICAR-Test-File",
+    "behavior_tags": [
+      "av_test_file"
+    ],
+    "explanation": [
+      "Matches the EICAR standard test string",
+      "Harmless by design; used to verify the pipeline"
+    ]
+  },
+  "response_actions": [
+    {
+      "action_id": "00000014-0000-4000-8000-000000000014",
+      "type": "notify",
+      "target": "soc-webhook",
+      "mode": "dry_run",
+      "status": "executed",
+      "approval": {
+        "required": false
+      },
+      "executed_at": "2026-10-10T09:05:00Z",
+      "audit_ref": "audit-0001"
+    }
+  ]
+}

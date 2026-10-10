@@ -1,0 +1,108 @@
+openapi: 3.1.0
+info:
+  title: Malware Analysis Platform API (M7)
+  version: 1.0.0
+  description: Published first so every module can mock against it. All bodies validate against schemas/analysis_result.schema.json.
+servers: [{url: http://localhost:8000/api/v1}]
+security: [{bearerAuth: []}]
+paths:
+  /samples:
+    post:
+      summary: Upload a sample (M1 handles intake; M7 exposes it)
+      description: Max 100 MiB. Filename is sanitized server-side. Duplicate SHA-256 returns the existing record.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+                archive_password: {type: string, description: "Optional, for password-protected archives."}
+      responses:
+        "202": {description: Accepted; analysis queued, content: {application/json: {schema: {$ref: "#/components/schemas/Accepted"}}}}
+        "200": {description: Duplicate; existing analysis returned, content: {application/json: {schema: {$ref: "#/components/schemas/Accepted"}}}}
+        "413": {description: Too large}
+        "422": {description: Validation error}
+  /analyses:
+    get:
+      summary: List analyses
+      parameters:
+        - {name: status, in: query, schema: {type: string}}
+        - {name: verdict, in: query, schema: {enum: [benign, suspicious, malicious, unknown]}}
+        - {name: limit, in: query, schema: {type: integer, maximum: 200, default: 50}}
+      responses:
+        "200": {description: OK, content: {application/json: {schema: {type: array, items: {$ref: "#/components/schemas/AnalysisSummary"}}}}}
+  /analyses/{analysis_id}:
+    get:
+      summary: Full analysis result
+      parameters: [{$ref: "#/components/parameters/AnalysisId"}]
+      responses:
+        "200": {description: OK, content: {application/json: {schema: {$ref: "https://example.local/contract/analysis_result.schema.json"}}}}
+        "404": {description: Not found}
+  /analyses/{analysis_id}/sections/{section}:
+    put:
+      summary: Module writes its own section (service token required)
+      description: Rejected with 403 SECTION_NOT_OWNED if the calling module does not own the section; 422 if it fails schema validation.
+      parameters:
+        - {$ref: "#/components/parameters/AnalysisId"}
+        - {name: section, in: path, required: true, schema: {enum: [sample, static, dynamic, iocs, detections, score, verdict, response_actions]}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses:
+        "200": {description: Stored}
+        "403": {description: SECTION_NOT_OWNED}
+        "409": {description: Section already final or pipeline state mismatch}
+        "422": {description: Schema validation failed}
+  /analyses/{analysis_id}/actions/{action_id}/approve:
+    post:
+      summary: Approve a pending response action (admin or analyst)
+      parameters:
+        - {$ref: "#/components/parameters/AnalysisId"}
+        - {name: action_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "200": {description: Approved and queued}
+        "403": {description: Role not permitted}
+        "409": {description: Action not awaiting approval}
+  /analyses/{analysis_id}/actions/{action_id}/reject:
+    post:
+      summary: Reject a pending response action
+      parameters:
+        - {$ref: "#/components/parameters/AnalysisId"}
+        - {name: action_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "200": {description: Rejected}
+  /analyses/{analysis_id}/export:
+    get:
+      summary: Export IOCs/report
+      parameters:
+        - {$ref: "#/components/parameters/AnalysisId"}
+        - {name: format, in: query, required: true, schema: {enum: [json, stix, csv, pdf]}}
+      responses:
+        "200": {description: File}
+  /health:
+    get:
+      security: []
+      summary: Liveness
+      responses:
+        "200": {description: OK}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT, description: "Roles: analyst, admin, service (module-scoped)."}
+  parameters:
+    AnalysisId: {name: analysis_id, in: path, required: true, schema: {type: string, format: uuid}}
+  schemas:
+    Accepted:
+      type: object
+      required: [analysis_id, vault_id, duplicate]
+      properties: {analysis_id: {type: string, format: uuid}, vault_id: {type: string, format: uuid}, duplicate: {type: boolean}}
+    AnalysisSummary:
+      type: object
+      required: [analysis_id, sha256, status]
+      properties:
+        analysis_id: {type: string, format: uuid}
+        sha256: {type: string}
+        status: {type: string}
+        verdict: {enum: [benign, suspicious, malicious, unknown]}
+        severity: {enum: [info, low, medium, high, critical]}
+        score: {type: number}
