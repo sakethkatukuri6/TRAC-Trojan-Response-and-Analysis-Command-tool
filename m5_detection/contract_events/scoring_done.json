@@ -1,0 +1,14 @@
+{
+  "event_id": "75c6e459-601c-4165-a430-f3c2b4a37dd4",
+  "type": "scoring.done",
+  "analysis_id": "11111111-2222-3333-4444-555555555555",
+  "vault_id": "00000003-0000-4000-8000-000000000003",
+  "emitted_at": "2026-10-10T11:21:27.840079+00:00",
+  "producer": "M5",
+  "contract_version": "1.0.0",
+  "payload": {
+    "section": "verdict",
+    "label": "malicious",
+    "severity": "high"
+  }
+}
