@@ -11,6 +11,11 @@ contract/
   examples/valid_*.json                 fixtures that must pass
   examples/invalid_*.json               fixtures that must fail (schema or semantic)
   tools/validate.py                     schema + semantic + ownership + event-flow checks
+  tools/check_module.py                 strict per-module gate (sections, ownership, events)
+  tools/stub_module.py                  contract-valid stub output/events per module
+  tools/check_all.py                    CI gate across all modules
+  Makefile, .github/workflows/          make check-M2 / make gate; CI workflow
+  COMMANDS.md                           module-specific commands
   tests/test_contract.py                unittest suite
 ```
 
