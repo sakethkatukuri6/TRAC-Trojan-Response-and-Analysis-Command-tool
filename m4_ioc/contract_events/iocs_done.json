@@ -1,0 +1,13 @@
+{
+  "event_id": "4d2a8550-24e7-446e-a73a-190580e50359",
+  "type": "iocs.done",
+  "analysis_id": "11111111-2222-3333-4444-555555555555",
+  "vault_id": "00000003-0000-4000-8000-000000000003",
+  "emitted_at": "2026-10-10T11:18:40.533568+00:00",
+  "producer": "M4",
+  "contract_version": "1.0.0",
+  "payload": {
+    "section": "iocs",
+    "ioc_count": 5
+  }
+}

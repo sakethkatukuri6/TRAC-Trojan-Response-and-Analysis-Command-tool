@@ -1,0 +1,79 @@
+{
+  "detections": {
+    "status": "done",
+    "items": [
+      {
+        "rule_id": "SYNTH_Loader_Generic",
+        "kind": "yara",
+        "severity": "high",
+        "attack_ids": [
+          "T1027"
+        ],
+        "tags": [
+          "loader"
+        ]
+      },
+      {
+        "rule_id": "sigma_runkey_persistence",
+        "kind": "sigma",
+        "severity": "medium",
+        "attack_ids": [
+          "T1547.001"
+        ]
+      },
+      {
+        "rule_id": "behavior_c2_beaconing",
+        "kind": "behavior",
+        "severity": "high",
+        "attack_ids": [
+          "T1071.001"
+        ]
+      }
+    ],
+    "intel_hits": [
+      {
+        "provider": "malwarebazaar",
+        "indicator": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "result": "unknown"
+      }
+    ]
+  },
+  "score": {
+    "value": 88,
+    "method": "ensemble",
+    "model_version": "ens-0.1",
+    "components": [
+      {
+        "name": "static_findings",
+        "weight": 0.3,
+        "contribution": 24
+      },
+      {
+        "name": "behaviors",
+        "weight": 0.5,
+        "contribution": 50
+      },
+      {
+        "name": "ml",
+        "weight": 0.2,
+        "contribution": 14
+      }
+    ]
+  },
+  "verdict": {
+    "label": "malicious",
+    "severity": "high",
+    "confidence": 0.91,
+    "family_guess": "generic_loader",
+    "behavior_tags": [
+      "persistence",
+      "c2_beaconing",
+      "packed"
+    ],
+    "explanation": [
+      "Packed (UPX) with high-entropy sections",
+      "Run-key persistence",
+      "Periodic HTTP beaconing at ~20s interval"
+    ]
+  }
+}

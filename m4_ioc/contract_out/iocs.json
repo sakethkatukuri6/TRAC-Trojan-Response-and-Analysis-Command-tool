@@ -1,0 +1,57 @@
+{
+  "iocs": {
+    "status": "done",
+    "items": [
+      {
+        "type": "domain",
+        "value": "c2[.]example",
+        "source": "pcap",
+        "confidence": 0.9
+      },
+      {
+        "type": "ip",
+        "value": "192[.]0[.]2[.]10",
+        "source": "pcap",
+        "confidence": 0.8
+      },
+      {
+        "type": "url",
+        "value": "hxxp://c2[.]example/gate",
+        "source": "static_strings",
+        "confidence": 0.85
+      },
+      {
+        "type": "mutex",
+        "value": "Global\\SYNTH_MTX_01",
+        "source": "dynamic",
+        "confidence": 0.7
+      },
+      {
+        "type": "registry_key",
+        "value": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Helper",
+        "source": "dynamic",
+        "confidence": 0.9
+      }
+    ],
+    "attack_techniques": [
+      {
+        "id": "T1547.001",
+        "tactic": "persistence",
+        "evidence": "Run key written"
+      },
+      {
+        "id": "T1071.001",
+        "tactic": "command-and-control",
+        "evidence": "Periodic HTTP to c2[.]example"
+      }
+    ],
+    "beacons": [
+      {
+        "destination": "c2[.]example",
+        "interval_s": 20,
+        "jitter": 0.1,
+        "count": 6
+      }
+    ]
+  }
+}
