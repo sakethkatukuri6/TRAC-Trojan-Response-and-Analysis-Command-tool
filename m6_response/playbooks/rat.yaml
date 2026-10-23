@@ -1,0 +1,26 @@
+﻿version: "1.0.0"
+name: "rat"
+description: "Response actions for Remote Access Trojans."
+target_families: ["rat", "generic_rat"]
+default_mode: "dry_run"
+actions:
+  - type: "isolate_host"
+    target_from: "dynamic.sandbox.guest_os"
+    mode: "dry_run"
+    approval_required: false
+    status: "proposed"
+  - type: "block_domain"
+    target_from: "iocs.domain"
+    mode: "dry_run"
+    approval_required: false
+    status: "proposed"
+  - type: "block_hash"
+    target_from: "sample.sha256"
+    mode: "dry_run"
+    approval_required: false
+    status: "proposed"
+  - type: "export_iocs"
+    target_fixed: "stix"
+    mode: "dry_run"
+    approval_required: false
+    status: "proposed"

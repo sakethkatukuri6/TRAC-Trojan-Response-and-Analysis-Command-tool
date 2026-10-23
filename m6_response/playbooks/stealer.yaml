@@ -1,0 +1,26 @@
+﻿version: "1.0.0"
+name: "stealer"
+description: "Response actions for Information Stealers."
+target_families: ["stealer", "infostealer"]
+default_mode: "dry_run"
+actions:
+  - type: "block_domain"
+    target_from: "iocs.domain"
+    mode: "dry_run"
+    approval_required: false
+    status: "proposed"
+  - type: "block_hash"
+    target_from: "sample.sha256"
+    mode: "dry_run"
+    approval_required: false
+    status: "proposed"
+  - type: "notify"
+    target_fixed: "identity_team"
+    mode: "dry_run"
+    approval_required: false
+    status: "proposed"
+  - type: "export_iocs"
+    target_fixed: "csv"
+    mode: "dry_run"
+    approval_required: false
+    status: "proposed"

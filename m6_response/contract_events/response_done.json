@@ -1,0 +1,14 @@
+{
+  "event_id": "65521487-b222-4329-bd16-b937d5d4df33",
+  "type": "response.done",
+  "analysis_id": "00000003-0000-4000-8000-000000000003",
+  "vault_id": "00000003-0000-4000-8000-000000000003",
+  "emitted_at": "2026-10-23T03:27:35.650230+00:00",
+  "producer": "M6",
+  "contract_version": "1.0.0",
+  "payload": {
+    "section": "response_actions",
+    "action_count": 3,
+    "awaiting_approval": 0
+  }
+}
