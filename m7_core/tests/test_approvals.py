@@ -1,11 +1,16 @@
 ﻿"""Test action approval and rejection routes."""
 import uuid
+from m7_core.repository.analysis_repo import AnalysisRepository
 
 
-def test_approval_and_rejection_flow(client, m6_token, analyst_token):
+def test_approval_and_rejection_flow(client, m6_token, analyst_token, db_session):
     aid = str(uuid.uuid4())
     act_id = str(uuid.uuid4())
     act_id2 = str(uuid.uuid4())
+
+    # Pre-create analysis record (as created by M1 intake)
+    repo = AnalysisRepository(db_session)
+    repo.create(aid, aid, "c" * 64, status="response")
 
     # 1. Propose actions awaiting approval via M6
     payload = [
@@ -40,7 +45,7 @@ def test_approval_and_rejection_flow(client, m6_token, analyst_token):
         f"/api/v1/analyses/{aid}/actions/{act_id}/approve",
         headers={"Authorization": f"Bearer {m6_token}"}
     )
-    assert r_unauth.status_code == 401 or r_unauth.status_code == 403
+    assert r_unauth.status_code in (401, 403)
 
     # 3. Approve first action
     r_app = client.post(

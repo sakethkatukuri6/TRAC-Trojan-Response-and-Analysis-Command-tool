@@ -1,4 +1,4 @@
-﻿"""Section writing router enforcing module ownership and JSON schema."""
+﻿"""Section writing router enforcing module ownership, analysis existence, and JSON schema."""
 from __future__ import annotations
 
 from typing import Any
@@ -11,6 +11,7 @@ from m7_core.services.section_service import (
     SectionOwnershipError,
     SectionValidationError,
     SectionStateConflictError,
+    AnalysisNotFoundError,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["sections"])
@@ -41,6 +42,11 @@ async def write_section(
             caller_module=caller_module
         )
         return result
+    except AnalysisNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "ANALYSIS_NOT_FOUND", "message": str(e)}
+        )
     except SectionOwnershipError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

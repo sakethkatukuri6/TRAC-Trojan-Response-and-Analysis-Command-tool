@@ -26,6 +26,11 @@ class SectionStateConflictError(Exception):
     pass
 
 
+class AnalysisNotFoundError(Exception):
+    """Raised when attempting to write a section to a non-existent analysis."""
+    pass
+
+
 class SectionService:
     def __init__(self, db: Session):
         self.db = db
@@ -49,16 +54,13 @@ class SectionService:
         if owner is None or owner != caller_module:
             raise SectionOwnershipError("SECTION_NOT_OWNED")
 
-        # 3. Check analysis exists and is not in final state
+        # 3. Check analysis exists (must be created by M1 intake) and is not in final state
         analysis = self.analysis_repo.get_by_id(analysis_id)
         if not analysis:
-            # Auto-create if not exists for test convenience
-            analysis = self.analysis_repo.create(
-                analysis_id=analysis_id,
-                vault_id=analysis_id,
-                sha256="0" * 64
+            raise AnalysisNotFoundError(
+                f"Analysis '{analysis_id}' not found. Sections can only be written to an existing analysis created by M1 intake."
             )
-        elif analysis.pipeline_status in ("complete", "failed", "dead_letter"):
+        if analysis.pipeline_status in ("complete", "failed", "dead_letter"):
             raise SectionStateConflictError(f"Analysis in final state '{analysis.pipeline_status}' cannot be modified")
 
         # 4. Schema validation

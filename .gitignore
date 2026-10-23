@@ -18,3 +18,7 @@ dist/
 # SQLite databases
 *.db
 *.sqlite3
+
+# Secrets file
+.secrets
+.secrets*

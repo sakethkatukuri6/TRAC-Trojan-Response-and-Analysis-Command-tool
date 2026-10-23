@@ -1,10 +1,11 @@
-﻿"""Exports router for report and IOC export."""
+﻿"""Exports router for report and IOC export enforcing declared bearerAuth security."""
 from __future__ import annotations
 
 import json
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 from m7_core.database import get_db
+from m7_core.api.auth import get_authenticated_identity
 from m7_core.services.analysis_service import AnalysisService
 
 router = APIRouter(prefix="/api/v1", tags=["exports"])
@@ -14,6 +15,7 @@ router = APIRouter(prefix="/api/v1", tags=["exports"])
 def export_analysis(
     analysis_id: str,
     format: str = Query(..., pattern="^(json|stix|csv|pdf)$"),
+    auth_identity: dict = Depends(get_authenticated_identity),
     db: Session = Depends(get_db),
 ):
     service = AnalysisService(db)

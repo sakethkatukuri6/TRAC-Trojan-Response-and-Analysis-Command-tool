@@ -4,6 +4,7 @@ from m7_core.services.section_service import (
     SectionOwnershipError,
     SectionValidationError,
     SectionStateConflictError,
+    AnalysisNotFoundError,
 )
 from m7_core.services.approval_service import (
     ApprovalService,
@@ -23,6 +24,7 @@ __all__ = [
     "SectionOwnershipError",
     "SectionValidationError",
     "SectionStateConflictError",
+    "AnalysisNotFoundError",
     "ApprovalService",
     "ActionNotFoundError",
     "ActionStateConflictError",

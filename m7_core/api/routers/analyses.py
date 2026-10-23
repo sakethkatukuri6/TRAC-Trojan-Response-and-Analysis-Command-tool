@@ -1,4 +1,4 @@
-﻿"""Analyses and Samples router."""
+﻿"""Analyses and Samples router enforcing declared bearerAuth security."""
 from __future__ import annotations
 
 import hashlib
@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 from m7_core.database import get_db
+from m7_core.api.auth import get_authenticated_identity
 from m7_core.repository.analysis_repo import AnalysisRepository
 from m7_core.services.analysis_service import AnalysisService
 
@@ -18,6 +19,7 @@ async def upload_sample(
     response: Response,
     file: UploadFile = File(...),
     archive_password: Optional[str] = Form(None),
+    auth_identity: dict = Depends(get_authenticated_identity),
     db: Session = Depends(get_db),
 ):
     content = await file.read()
@@ -47,6 +49,7 @@ def list_analyses(
     status: Optional[str] = Query(None),
     verdict: Optional[str] = Query(None),
     limit: int = Query(50, le=200),
+    auth_identity: dict = Depends(get_authenticated_identity),
     db: Session = Depends(get_db),
 ):
     service = AnalysisService(db)
@@ -56,6 +59,7 @@ def list_analyses(
 @router.get("/analyses/{analysis_id}", summary="Full analysis result")
 def get_analysis(
     analysis_id: str,
+    auth_identity: dict = Depends(get_authenticated_identity),
     db: Session = Depends(get_db),
 ):
     service = AnalysisService(db)
