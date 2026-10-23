@@ -22,15 +22,18 @@ async def upload_sample(
 ):
     """Upload a sample (M1 handles intake; M7 exposes it).
 
-    Enforces M1 intake ownership: M7 does not create analysis records directly
-    for uploaded samples; all intake processing is delegated to M1.
+    Enforces M1 intake ownership and streams the proxy upload directly to M1
+    while enforcing the 100 MiB cap before/during streaming without buffering
+    the entire payload in memory.
     """
-    content = await file.read()
-    if len(content) > 100 * 1024 * 1024:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File exceeds 100 MiB cap")
+    if file.size and file.size > 100 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File exceeds 100 MiB cap"
+        )
 
     result = await intake_client.forward_sample_upload(
-        content=content,
+        file_obj=file.file,
         filename=file.filename or "sample.bin",
         content_type=file.content_type or "application/octet-stream",
         archive_password=archive_password,
