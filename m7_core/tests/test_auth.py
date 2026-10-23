@@ -1,5 +1,14 @@
-﻿"""Test authentication, authorization, and declared bearer security."""
-from m7_core.api.auth import verify_password, get_password_hash, create_user_token, create_module_token
+﻿"""Test authentication, authorization, declared bearer security, and fail-closed secrets."""
+import os
+from unittest.mock import patch
+import pytest
+from m7_core.api.auth import (
+    verify_password,
+    get_password_hash,
+    create_user_token,
+    create_module_token,
+    get_stable_secret,
+)
 
 
 def test_password_hashing():
@@ -53,3 +62,30 @@ def test_declared_bearer_security_enforced_on_analyses(client, analyst_token):
     # Authenticated GET /analyses succeeds
     resp_auth = client.get("/api/v1/analyses", headers={"Authorization": f"Bearer {analyst_token}"})
     assert resp_auth.status_code == 200
+
+
+def test_secrets_fail_closed_in_production(monkeypatch):
+    """P2 requirement: Fail closed when deployment secrets are unavailable in production."""
+    monkeypatch.setenv("TRAC_ENV", "production")
+    monkeypatch.delenv("TEST_DEPLOY_SECRET", raising=False)
+    with pytest.raises(RuntimeError, match="unavailable.*production"):
+        get_stable_secret("TEST_DEPLOY_SECRET", "test_key")
+
+
+def test_secrets_fail_closed_on_corrupt_file(tmp_path, monkeypatch):
+    """P2 requirement: Fail closed if existing secrets file cannot be parsed."""
+    corrupt_file = tmp_path / ".secrets"
+    corrupt_file.write_text("NOT_VALID_JSON{", encoding="utf-8")
+    monkeypatch.setattr("m7_core.api.auth.REPO_ROOT", tmp_path)
+    monkeypatch.delenv("TEST_CORRUPT_SECRET", raising=False)
+    with pytest.raises(RuntimeError, match="could not be read"):
+        get_stable_secret("TEST_CORRUPT_SECRET", "test_key")
+
+
+def test_secrets_fail_closed_on_unwritable_file(tmp_path, monkeypatch):
+    """P2 requirement: Fail closed if new secret cannot be persisted to disk."""
+    monkeypatch.setattr("m7_core.api.auth.REPO_ROOT", tmp_path)
+    monkeypatch.delenv("TEST_UNWRITABLE_SECRET", raising=False)
+    with patch("builtins.open", side_effect=OSError("Read-only filesystem")):
+        with pytest.raises(RuntimeError, match="could not be persisted"):
+            get_stable_secret("TEST_UNWRITABLE_SECRET", "test_key")

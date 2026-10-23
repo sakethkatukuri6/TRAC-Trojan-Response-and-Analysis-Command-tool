@@ -1,15 +1,13 @@
-﻿"""Analyses and Samples router enforcing declared bearerAuth security."""
+﻿"""Analyses and Samples router enforcing declared bearerAuth security and M1 intake ownership."""
 from __future__ import annotations
 
-import hashlib
-import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 from m7_core.database import get_db
 from m7_core.api.auth import get_authenticated_identity
-from m7_core.repository.analysis_repo import AnalysisRepository
 from m7_core.services.analysis_service import AnalysisService
+from m7_core.services.m1_intake_client import M1IntakeClient, get_m1_intake_client
 
 router = APIRouter(prefix="/api/v1", tags=["analyses"])
 
@@ -20,27 +18,34 @@ async def upload_sample(
     file: UploadFile = File(...),
     archive_password: Optional[str] = Form(None),
     auth_identity: dict = Depends(get_authenticated_identity),
-    db: Session = Depends(get_db),
+    intake_client: M1IntakeClient = Depends(get_m1_intake_client),
 ):
+    """Upload a sample (M1 handles intake; M7 exposes it).
+
+    Enforces M1 intake ownership: M7 does not create analysis records directly
+    for uploaded samples; all intake processing is delegated to M1.
+    """
     content = await file.read()
     if len(content) > 100 * 1024 * 1024:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File exceeds 100 MiB cap")
 
-    sha256 = hashlib.sha256(content).hexdigest()
-    repo = AnalysisRepository(db)
-    analysis_id = str(uuid.uuid4())
-    vault_id = str(uuid.uuid4())
+    result = await intake_client.forward_sample_upload(
+        content=content,
+        filename=file.filename or "sample.bin",
+        content_type=file.content_type or "application/octet-stream",
+        archive_password=archive_password,
+    )
 
-    model, is_duplicate = repo.get_or_create(analysis_id=analysis_id, vault_id=vault_id, sha256=sha256)
+    is_duplicate = result.get("duplicate", False)
     if is_duplicate:
         response.status_code = status.HTTP_200_OK
     else:
         response.status_code = status.HTTP_202_ACCEPTED
 
     return {
-        "analysis_id": model.analysis_id,
-        "vault_id": model.vault_id,
-        "duplicate": is_duplicate
+        "analysis_id": result["analysis_id"],
+        "vault_id": result["vault_id"],
+        "duplicate": is_duplicate,
     }
 
 

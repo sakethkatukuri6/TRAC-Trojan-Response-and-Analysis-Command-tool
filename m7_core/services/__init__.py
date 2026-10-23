@@ -17,6 +17,10 @@ from m7_core.services.event_processor import (
     EventProducerMismatchError,
     EventStateConflictError,
 )
+from m7_core.services.m1_intake_client import (
+    M1IntakeClient,
+    get_m1_intake_client,
+)
 
 __all__ = [
     "AnalysisService",
@@ -32,4 +36,6 @@ __all__ = [
     "EventValidationError",
     "EventProducerMismatchError",
     "EventStateConflictError",
+    "M1IntakeClient",
+    "get_m1_intake_client",
 ]

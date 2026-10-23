@@ -22,8 +22,9 @@ def approve_action(
     db: Session = Depends(get_db),
 ):
     service = ApprovalService(db)
+    actor = current_user.get("username") or current_user.get("sub", "analyst")
     try:
-        return service.approve_action(analysis_id, action_id, actor=current_user["username"])
+        return service.approve_action(analysis_id, action_id, actor=actor)
     except ActionNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ActionStateConflictError as e:
@@ -38,8 +39,9 @@ def reject_action(
     db: Session = Depends(get_db),
 ):
     service = ApprovalService(db)
+    actor = current_user.get("username") or current_user.get("sub", "analyst")
     try:
-        return service.reject_action(analysis_id, action_id, actor=current_user["username"])
+        return service.reject_action(analysis_id, action_id, actor=actor)
     except ActionNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ActionStateConflictError as e:
