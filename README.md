@@ -24,7 +24,7 @@ contract/
 | iocs | M4 | iocs.done |
 | detections, score, verdict | M5 | scoring.done |
 | response_actions | M6 | response.done |
-| pipeline | M7 only | n/a |
+| pipeline | M7 only | done |
 
 Report generation (M8) emits `report.done`. M7 is the only module that writes to the database.
 
