@@ -1,0 +1,46 @@
+{
+  "static": {
+    "status": "done",
+    "file_class": "pe",
+    "entropy": 7.6,
+    "packers": [
+      "UPX"
+    ],
+    "pe": {
+      "signed": false,
+      "sections": [
+        {
+          "name": ".text",
+          "entropy": 7.8
+        },
+        {
+          "name": "UPX1",
+          "entropy": 7.9
+        }
+      ],
+      "imports": [
+        "WININET.dll!InternetOpenA",
+        "ADVAPI32.dll!RegSetValueExA"
+      ]
+    },
+    "strings": {
+      "count": 88,
+      "interesting": [
+        "hxxp://c2[.]example/gate"
+      ],
+      "deobfuscated_count": 14
+    },
+    "yara_matches": [
+      {
+        "rule": "SYNTH_Loader_Generic",
+        "namespace": "trojan",
+        "tags": [
+          "loader"
+        ]
+      }
+    ],
+    "embedded_urls": [
+      "hxxp://c2[.]example/gate"
+    ]
+  }
+}
