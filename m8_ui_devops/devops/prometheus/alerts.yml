@@ -1,0 +1,18 @@
+groups:
+  - name: pipeline_alerts
+    rules:
+      - alert: StageFailureRateHigh
+        expr: rate(trac_stage_failures_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Analysis stage failure rate exceeded 5% threshold"
+
+      - alert: DeadLetterQueueNotEmpty
+        expr: rabbitmq_queue_messages{queue="q.dlq"} > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Analyses encountered non-retryable failure in Dead Letter Queue"

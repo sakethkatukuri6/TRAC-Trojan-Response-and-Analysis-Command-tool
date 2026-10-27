@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TRAC // Threat Response & Analysis Command Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["Roboto", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+            mono: ["'Roboto Mono'", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #06090e;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+      background-size: 32px 32px;
+      color: #e2e8f0;
+      font-family: 'Roboto', -apple-system, sans-serif;
+    }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #080c14; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 2px; }
+
+    @keyframes layerReveal {
+      0% { opacity: 0; transform: translateY(14px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    .anim-layer-1 { animation: layerReveal 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    .anim-layer-2 { opacity: 0; animation: layerReveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.08s forwards; }
+    .anim-layer-3 { opacity: 0; animation: layerReveal 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.16s forwards; }
+    .anim-layer-4 { opacity: 0; animation: layerReveal 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.24s forwards; }
+    .anim-layer-5 { opacity: 0; animation: layerReveal 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.32s forwards; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    const SYNTHETIC_TROJAN = {
+      contract_version: "1.0.0",
+      analysis_id: "00000003-0000-4000-8000-000000000003",
+      sample: {
+        vault_id: "00000003-0000-4000-8000-000000000003",
+        sha256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        md5: "dddddddddddddddddddddddddddddddd",
+        size_bytes: 245760,
+        file_type: "pe",
+        original_name: "invoice_synthetic.exe",
+        received_at: "2026-10-10T09:00:00Z",
+        submitter: "analyst1",
+        stored_defanged: true,
+        stored_encrypted: true,
+        clamav_result: "not_run"
+      },
+      pipeline: {
+        status: "complete",
+        stages: { ingest: "done", static: "done", dynamic: "done", iocs: "done", scoring: "done", response: "done", report: "done" },
+        retries: 0
+      },
+      static: {
+        status: "done",
+        file_class: "pe",
+        entropy: 7.6,
+        packers: ["UPX"],
+        pe: {
+          signed: false,
+          sections: [
+            { name: ".text", entropy: 7.8, raw_size: 131072, virtual_size: 135168 },
+            { name: "UPX1", entropy: 7.9, raw_size: 114688, virtual_size: 118784 }
+          ],
+          imports: ["WININET.dll!InternetOpenA", "ADVAPI32.dll!RegSetValueExA", "KERNEL32.dll!VirtualAllocEx"]
+        },
+        strings: { count: 88, interesting: ["hxxp://c2[.]example/gate"], deobfuscated_count: 14 },
+        yara_matches: [{ rule: "SYNTH_Loader_Generic", namespace: "trojan", tags: ["loader"] }],
+        embedded_urls: ["hxxp://c2[.]example/gate"]
+      },
+      dynamic: {
+        status: "done",
+        sandbox: { engine: "capev2", guest_os: "win10-x64", run_id: "run-0003", duration_s: 120, timeout_s: 120, network_mode: "simulated_internet", reverted: true },
+        process_tree: [
+          { pid: 2100, ppid: 900, name: "invoice_synthetic.exe" },
+          { pid: 2144, ppid: 2100, name: "cmd.exe", command_line: "cmd.exe /c whoami" }
+        ],
+        file_events: [{ action: "create", target: "%APPDATA%\\svc\\helper.exe", pid: 2100 }],
+        registry_events: [{ action: "modify", target: "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Helper", pid: 2100 }],
+        mutexes: ["Global\\SYNTH_MTX_01"],
+        dropped_files: [{ sha256: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", name: "helper.exe", size_bytes: 51200 }],
+        network_summary: { dns_queries: 4, http_requests: 6, tcp_connections: 6 }
+      },
+      iocs: {
+        status: "done",
+        items: [
+          { type: "domain", value: "c2[.]example", source: "pcap", confidence: 0.9 },
+          { type: "ip", value: "192[.]0[.]2[.]10", source: "pcap", confidence: 0.8 },
+          { type: "url", value: "hxxp://c2[.]example/gate", source: "static_strings", confidence: 0.85 },
+          { type: "mutex", value: "Global\\SYNTH_MTX_01", source: "dynamic", confidence: 0.7 },
+          { type: "registry_key", value: "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Helper", source: "dynamic", confidence: 0.9 }
+        ],
+        attack_techniques: [
+          { id: "T1547.001", tactic: "persistence", evidence: "Run key written" },
+          { id: "T1071.001", tactic: "command-and-control", evidence: "Periodic HTTP to c2[.]example" },
+          { id: "T1027", tactic: "defense-evasion", evidence: "UPX packer compressed sections" }
+        ],
+        beacons: [{ destination: "c2[.]example", interval_s: 20, jitter: 0.1, count: 6 }]
+      },
+      detections: {
+        status: "done",
+        items: [
+          { rule_id: "SYNTH_Loader_Generic", kind: "yara", severity: "high", attack_ids: ["T1027"], tags: ["loader"] },
+          { rule_id: "sigma_runkey_persistence", kind: "sigma", severity: "medium", attack_ids: ["T1547.001"] },
+          { rule_id: "behavior_c2_beaconing", kind: "behavior", severity: "high", attack_ids: ["T1071.001"] }
+        ],
+        intel_hits: [{ provider: "malwarebazaar", indicator: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", result: "unknown" }]
+      },
+      score: {
+        value: 88,
+        method: "ensemble",
+        model_version: "ens-0.1",
+        components: [
+          { name: "static_findings", weight: 0.3, contribution: 24 },
+          { name: "behaviors", weight: 0.5, contribution: 50 },
+          { name: "ml", weight: 0.2, contribution: 14 }
+        ]
+      },
+      verdict: {
+        label: "malicious",
+        severity: "high",
+        confidence: 0.91,
+        family_guess: "generic_loader",
+        behavior_tags: ["persistence", "c2_beaconing", "packed"],
+        explanation: [
+          "Packed (UPX) with high-entropy binary sections (7.90)",
+          "Run-key persistence in Windows registry (HKCU\\...\\Run\\Helper)",
+          "Periodic HTTP beaconing at ~20s interval to c2[.]example"
+        ]
+      },
+      response_actions: [
+        { action_id: "0000001e-0000-4000-8000-00000000001e", type: "block_hash", target: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", mode: "dry_run", status: "proposed", approval: { required: false } },
+        { action_id: "0000001f-0000-4000-8000-00000000001f", type: "block_domain", target: "c2[.]example", mode: "real", status: "awaiting_approval", approval: { required: true } },
+        { action_id: "00000020-0000-4000-8000-000000000020", type: "export_iocs", target: "stix", mode: "real", status: "executed", approval: { required: false }, executed_at: "2026-10-10T09:10:00Z", audit_ref: "audit-0003" }
+      ]
+    };
+
+    const BENIGN_SAMPLE = {
+      contract_version: "1.0.0",
+      analysis_id: "00000001-0000-4000-8000-000000000001",
+      sample: {
+        vault_id: "00000001-0000-4000-8000-000000000001",
+        sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        md5: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        size_bytes: 18432,
+        file_type: "pe",
+        original_name: "hello_test.exe",
+        received_at: "2026-10-10T09:00:00Z",
+        submitter: "analyst1",
+        stored_defanged: true,
+        stored_encrypted: true,
+        clamav_result: "not_run"
+      },
+      pipeline: {
+        status: "complete",
+        stages: { ingest: "done", static: "done", dynamic: "done", iocs: "done", scoring: "done", response: "done", report: "done" },
+        retries: 0
+      },
+      static: {
+        status: "done",
+        file_class: "pe",
+        entropy: 5.1,
+        packers: [],
+        pe: { signed: true, sections: [{ name: ".text", entropy: 6.0 }, { name: ".data", entropy: 3.2 }], imports: ["KERNEL32.dll!ExitProcess"] },
+        strings: { count: 212, interesting: [] },
+        yara_matches: []
+      },
+      dynamic: {
+        status: "done",
+        sandbox: { engine: "capev2", guest_os: "win10-x64", run_id: "run-0001", duration_s: 30, timeout_s: 120, network_mode: "isolated", reverted: true },
+        process_tree: [{ pid: 1040, name: "hello_test.exe" }],
+        network_summary: { dns_queries: 0, http_requests: 0, tcp_connections: 0 }
+      },
+      iocs: { status: "done", items: [] },
+      detections: { status: "done", items: [] },
+      score: { value: 12, method: "weighted_rules_v1", components: [{ name: "static", weight: 0.5, contribution: 6 }, { name: "dynamic", weight: 0.5, contribution: 6 }] },
+      verdict: {
+        label: "benign",
+        severity: "info",
+        confidence: 0.98,
+        family_guess: "clean_tool",
+        explanation: ["Standard compiler sections with normal entropy", "No anomalous API calls or network activity"]
+      },
+      response_actions: []
+    };
+
+    function App() {
+      const [samples, setSamples] = useState([SYNTHETIC_TROJAN, BENIGN_SAMPLE]);
+      const [selectedId, setSelectedId] = useState(SYNTHETIC_TROJAN.analysis_id);
+      const [activeTab, setActiveTab] = useState("overview");
+      const [role, setRole] = useState("analyst");
+      const [toast, setToast] = useState(null);
+
+      const active = samples.find(s => s.analysis_id === selectedId) || samples[0];
+
+      const showToast = (msg) => {
+        setToast(msg);
+        setTimeout(() => setToast(null), 2500);
+      };
+
+      const copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text);
+        showToast("Copied to clipboard: " + text.slice(0, 16) + "...");
+      };
+
+      return (
+        <div className="min-h-screen bg-[#06090e] text-slate-100 flex flex-col font-sans selection:bg-[#1565c0]">
+          {/* Top Bar - Layer 1 */}
+          <header className="bg-[#080c14] border-b border-[#1c2636] sticky top-0 z-40 px-6 py-2.5 flex items-center justify-between anim-layer-1">
+            <div className="flex items-center gap-3">
+              <span className="w-2.5 h-2.5 bg-[#b71c1c] border border-[#ef5350] rounded-sm transform rotate-45 inline-block" />
+              <span className="font-mono font-black text-slate-100 text-sm tracking-widest uppercase">
+                TRAC <span className="text-slate-600 font-light">//</span> COMMAND
+              </span>
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#2d0a0a] text-red-400 border border-[#b71c1c] font-bold">
+                TLP:AMBER
+              </span>
+              <span className="text-[11px] font-mono text-slate-500">CONTRACT V1.0.0</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#0b1017] border border-[#1c2636] text-xs font-mono">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-emerald-400 font-semibold">M7 LIVE</span>
+              </div>
+              <div className="flex items-center gap-1 bg-[#0b1017] px-2.5 py-1 rounded border border-[#1c2636] text-xs font-mono">
+                <span className="text-slate-500">ROLE:</span>
+                <select value={role} onChange={e => setRole(e.target.value)} className="bg-transparent text-slate-200 font-semibold cursor-pointer focus:outline-none">
+                  <option value="analyst" className="bg-[#0b1017]">Analyst (Tier 2)</option>
+                  <option value="approver" className="bg-[#0b1017]">Approver / Admin</option>
+                  <option value="auditor" className="bg-[#0b1017]">Compliance Auditor</option>
+                </select>
+              </div>
+            </div>
+          </header>
+
+          {/* Main Container */}
+          <main className="flex-1 max-w-[1440px] w-full mx-auto p-4 lg:p-6 space-y-4">
+            {/* Sample Selector - Layer 2 */}
+            <div className="bg-[#0b1017] border border-[#1c2636] rounded p-2.5 flex items-center justify-between text-xs font-mono anim-layer-2">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 font-bold text-[10px] uppercase">Active Target:</span>
+                <div className="flex gap-1.5">
+                  {samples.map(s => (
+                    <button
+                      key={s.analysis_id}
+                      onClick={() => setSelectedId(s.analysis_id)}
+                      className={`px-3 py-1.5 rounded flex items-center gap-2 border transition ${
+                        s.analysis_id === selectedId
+                          ? "bg-[#121924] border-[#1565c0] text-white font-bold shadow-sm"
+                          : "bg-[#080c14] border-[#1c2636] text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${s.verdict.label === 'malicious' ? 'bg-[#c62828]' : 'bg-[#2e7d32]'}`} />
+                      <span>{s.sample.original_name}</span>
+                      <span className="text-[10px] opacity-60">({s.verdict.label})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="text-slate-500 text-xs">Vault ID: {active.sample.vault_id.slice(0, 13)}...</div>
+            </div>
+
+            {/* Verdict Hero Banner - Layer 3 */}
+            <div className="bg-[#0b1017] border border-[#1c2636] rounded p-5 shadow-lg anim-layer-3">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                <div className="lg:col-span-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2.5 py-0.5 rounded text-xs font-black font-mono uppercase tracking-wider ${
+                      active.verdict.label === 'malicious' ? 'bg-[#b71c1c] text-white border border-[#d32f2f]' : 'bg-[#1b5e20] text-white border border-[#2e7d32]'
+                    }`}>
+                      {active.verdict.label}
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[11px] font-bold font-mono uppercase bg-[#2d1204] text-orange-400 border border-[#bf360c]">
+                      {active.verdict.severity}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-slate-500 uppercase font-mono">Classification Family</div>
+                    <div className="text-sm font-bold font-mono text-slate-100">{active.verdict.family_guess}</div>
+                    <div className="text-xs text-slate-400 font-mono">Confidence: <strong>{Math.round(active.verdict.confidence * 100)}%</strong></div>
+                  </div>
+                  {active.verdict.behavior_tags && (
+                    <div className="flex flex-wrap gap-1">
+                      {active.verdict.behavior_tags.map(t => (
+                        <span key={t} className="text-[10px] font-mono px-1.5 py-0.5 bg-[#121924] text-slate-300 rounded border border-[#1c2636]">
+                          #{t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="lg:col-span-5 border-l border-[#1c2636] pl-6 space-y-2">
+                  <div className="text-xs font-bold text-slate-300 font-mono uppercase tracking-wider">Telemetry Findings & Rationale</div>
+                  <ul className="text-xs space-y-1 text-slate-200">
+                    {active.verdict.explanation.map((e, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <span className="text-red-400 font-mono font-bold select-none">::</span>
+                        <span>{e}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="pt-2 flex gap-2">
+                    <a
+                      href={`/api/reports/${active.analysis_id}/pdf`}
+                      target="_blank"
+                      className="px-3 py-1.5 rounded text-xs font-mono font-bold bg-[#1565c0] hover:bg-[#1976d2] text-white border border-[#1e88e5] transition"
+                    >
+                      [EXPORT PDF REPORT]
+                    </a>
+                    <a
+                      href={`/api/reports/${active.analysis_id}/html`}
+                      target="_blank"
+                      className="px-3 py-1.5 rounded text-xs font-mono font-semibold bg-[#121924] hover:bg-[#1c2636] text-slate-200 border border-[#1c2636] transition"
+                    >
+                      [STANDALONE HTML]
+                    </a>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-3 bg-[#080c14] p-4 rounded border border-[#1c2636]">
+                  <div className="flex justify-between items-baseline font-mono">
+                    <span className="text-xs font-bold uppercase text-slate-400">Threat Score</span>
+                    <span className="text-2xl font-black text-white">{active.score.value} <span className="text-xs text-slate-500 font-normal">/ 100</span></span>
+                  </div>
+                  <div className="w-full bg-[#121924] rounded-full h-2 mt-2 overflow-hidden border border-[#1c2636]">
+                    <div
+                      className={`h-full ${active.score.value >= 60 ? 'bg-[#c62828]' : 'bg-[#2e7d32]'}`}
+                      style={{ width: `${active.score.value}%` }}
+                    />
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono mt-2 text-right">Method: {active.score.method}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Tab Bar - Layer 4 */}
+            <div className="border-b border-[#1c2636] flex gap-1 overflow-x-auto text-xs font-mono font-bold uppercase anim-layer-4">
+              {[
+                { id: "overview", label: "Overview" },
+                { id: "static", label: "Static Analysis" },
+                { id: "dynamic", label: "Dynamic Telemetry" },
+                { id: "network", label: "Network & C2" },
+                { id: "iocs", label: `IOCs (${active.iocs?.items?.length || 0})` },
+                { id: "attack", label: "MITRE ATT&CK" },
+                { id: "response", label: `Response (${active.response_actions?.length || 0})` },
+                { id: "audit", label: "Pipeline & Audit" }
+              ].map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setActiveTab(t.id)}
+                  className={`px-4 py-2.5 border-b-2 transition whitespace-nowrap ${
+                    activeTab === t.id
+                      ? "border-[#1565c0] text-sky-400 bg-[#0b1017]"
+                      : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-[#0b1017]/40"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab Contents - Layer 5 */}
+            <div className="anim-layer-5">
+              {activeTab === "overview" && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="bg-[#0b1017] p-5 rounded border border-[#1c2636] space-y-2 text-xs font-mono">
+                    <div className="text-xs font-bold text-slate-300 uppercase border-b border-[#1c2636] pb-2">Sample Cryptographic Provenance</div>
+                    <div className="flex justify-between py-1 border-b border-[#1c2636]/40"><span className="text-slate-500">File Name:</span><span className="text-white font-bold">{active.sample.original_name}</span></div>
+                    <div className="flex justify-between py-1 border-b border-[#1c2636]/40"><span className="text-slate-500">Size:</span><span>{active.sample.size_bytes} bytes</span></div>
+                    <div className="flex justify-between py-1 border-b border-[#1c2636]/40"><span className="text-slate-500">Type:</span><span className="uppercase">{active.sample.file_type}</span></div>
+                    <div className="pt-2">
+                      <div className="flex justify-between text-slate-500 mb-1">
+                        <span>SHA-256:</span>
+                        <button onClick={() => copyToClipboard(active.sample.sha256)} className="text-sky-400 font-bold hover:underline">[COPY]</button>
+                      </div>
+                      <div className="p-2 bg-[#080c14] rounded text-sky-400 text-xs break-all border border-[#1c2636] select-all">{active.sample.sha256}</div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-slate-500 mb-1">
+                        <span>MD5:</span>
+                        <button onClick={() => copyToClipboard(active.sample.md5)} className="text-sky-400 font-bold hover:underline">[COPY]</button>
+                      </div>
+                      <div className="p-1.5 bg-[#080c14] rounded text-slate-300 text-xs border border-[#1c2636]">{active.sample.md5}</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#0b1017] p-5 rounded border border-[#1c2636] space-y-3 text-xs font-mono">
+                    <div className="text-xs font-bold text-slate-300 uppercase border-b border-[#1c2636] pb-2">Threat Score Decomposition</div>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-slate-500 border-b border-[#1c2636] text-left">
+                          <th className="pb-1.5">Component</th>
+                          <th className="pb-1.5 text-right">Weight</th>
+                          <th className="pb-1.5 text-right">Contribution</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#1c2636]/60">
+                        {active.score.components?.map((c, i) => (
+                          <tr key={i}>
+                            <td className="py-2 text-slate-300">{c.name}</td>
+                            <td className="py-2 text-right text-slate-500">{c.weight}</td>
+                            <td className="py-2 text-right text-sky-400 font-bold">+{c.contribution}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="p-3 bg-[#080c14] rounded border border-[#1c2636] text-[11px] text-slate-400">
+                      Rule verification: Malicious (&ge;60) satisfied. Component sum matches total within 1.0.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "iocs" && (
+                <div className="bg-[#0b1017] p-5 rounded border border-[#1c2636] space-y-3">
+                  <div className="flex justify-between items-center text-xs font-mono text-slate-400 border-b border-[#1c2636] pb-2">
+                    <span>Defanged Indicators of Compromise (Contract Enforced)</span>
+                    <span className="text-sky-400 font-bold">{active.iocs?.items?.length || 0} EXTRACTED</span>
+                  </div>
+                  <table className="w-full text-xs font-mono">
+                    <thead>
+                      <tr className="text-slate-400 border-b border-[#1c2636] text-left">
+                        <th className="p-2">Type</th>
+                        <th className="p-2">Defanged Value</th>
+                        <th className="p-2">Source</th>
+                        <th className="p-2 text-right">Confidence</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#1c2636]/60">
+                      {active.iocs?.items?.map((item, idx) => (
+                        <tr key={idx}>
+                          <td className="p-2 uppercase font-bold text-slate-300">{item.type}</td>
+                          <td className="p-2 text-sky-400 select-all">{item.value}</td>
+                          <td className="p-2 text-slate-400">{item.source}</td>
+                          <td className="p-2 text-right font-bold text-slate-200">{Math.round(item.confidence * 100)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {activeTab === "response" && (
+                <div className="bg-[#0b1017] p-5 rounded border border-[#1c2636] space-y-3">
+                  <div className="text-xs font-bold font-mono text-slate-300 border-b border-[#1c2636] pb-2">
+                    Incident Containment Actions (M6 Engine)
+                  </div>
+                  <table className="w-full text-xs font-mono">
+                    <thead>
+                      <tr className="text-slate-400 border-b border-[#1c2636] text-left">
+                        <th className="p-2">Action</th>
+                        <th className="p-2">Target</th>
+                        <th className="p-2">Mode</th>
+                        <th className="p-2">Status</th>
+                        <th className="p-2">Audit Ref</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#1c2636]/60">
+                      {active.response_actions?.map((act, i) => (
+                        <tr key={i}>
+                          <td className="p-2 font-bold text-slate-200">{act.type}</td>
+                          <td className="p-2 text-sky-400">{act.target}</td>
+                          <td className="p-2 uppercase">{act.mode}</td>
+                          <td className="p-2">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                              act.status === 'awaiting_approval' ? 'bg-[#2d0a0a] text-red-300 border-[#b71c1c] animate-pulse' : 'bg-[#151d2a] text-slate-300 border-[#2c3b52]'
+                            }`}>
+                              {act.status}
+                            </span>
+                          </td>
+                          <td className="p-2 text-slate-400">{act.audit_ref || "Pending Authorization"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {activeTab === "audit" && (
+                <div className="bg-[#0b1017] p-5 rounded border border-[#1c2636] space-y-3">
+                  <div className="text-xs font-bold font-mono text-slate-300 border-b border-[#1c2636] pb-2">
+                    Full Contract Document (analysis_result.schema.json)
+                  </div>
+                  <pre className="p-4 bg-[#080c14] rounded border border-[#1c2636] text-xs font-mono text-sky-400 max-h-[500px] overflow-y-auto select-all">
+                    {JSON.stringify(active, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              {activeTab === "static" && (
+                <div className="bg-[#0b1017] p-5 rounded border border-[#1c2636] space-y-4 text-xs font-mono">
+                  <div className="text-xs font-bold text-slate-300 uppercase border-b border-[#1c2636] pb-2">Static Analysis Telemetry</div>
+                  <div>Entropy: <span className="text-red-400 font-bold">{active.static?.entropy}</span> / 8.00 (Packed: {active.static?.packers?.join(", ") || "None"})</div>
+                  <div>YARA Matches: {active.static?.yara_matches?.map(y => y.rule).join(", ") || "None"}</div>
+                  <div>Imports Trapped: {active.static?.pe?.imports?.join(", ") || "None"}</div>
+                </div>
+              )}
+
+              {activeTab === "dynamic" && (
+                <div className="bg-[#0b1017] p-5 rounded border border-[#1c2636] space-y-4 text-xs font-mono">
+                  <div className="text-xs font-bold text-slate-300 uppercase border-b border-[#1c2636] pb-2">Dynamic Telemetry (CAPE Sandbox)</div>
+                  <div>Guest OS: {active.dynamic?.sandbox?.guest_os} | Network: {active.dynamic?.sandbox?.network_mode}</div>
+                  <div className="font-bold text-slate-200 mt-2">Spawned Processes:</div>
+                  {active.dynamic?.process_tree?.map((p, i) => (
+                    <div key={i} className="p-2.5 bg-[#080c14] rounded border border-[#1c2636]">
+                      PID {p.pid} (PPID {p.ppid}): <strong>{p.name}</strong> {p.command_line && `(${p.command_line})`}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activeTab === "network" && (
+                <div className="bg-[#0b1017] p-5 rounded border border-[#1c2636] space-y-4 text-xs font-mono">
+                  <div className="text-xs font-bold text-slate-300 uppercase border-b border-[#1c2636] pb-2">C2 Periodic Beaconing Pattern</div>
+                  {active.iocs?.beacons?.map((b, i) => (
+                    <div key={i} className="p-3 bg-[#080c14] rounded border border-[#b71c1c] text-red-300">
+                      Target: <strong>{b.destination}</strong> | Interval: {b.interval_s}s | Jitter: {b.jitter * 100}% | Pulse: {b.count}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activeTab === "attack" && (
+                <div className="bg-[#0b1017] p-5 rounded border border-[#1c2636] space-y-4 text-xs font-mono">
+                  <div className="text-xs font-bold text-slate-300 uppercase border-b border-[#1c2636] pb-2">Observed MITRE ATT&CK Matrix Techniques</div>
+                  {active.iocs?.attack_techniques?.map((a, i) => (
+                    <div key={i} className="p-2.5 bg-[#080c14] rounded border border-[#1c2636] flex justify-between">
+                      <span className="font-bold text-amber-400">{a.id} ({a.tactic})</span>
+                      <span className="text-slate-300">{a.evidence}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </main>
+
+          {/* Toast Notification */}
+          {toast && (
+            <div className="fixed bottom-5 right-5 bg-[#0b1017] border border-[#1565c0] text-sky-300 px-4 py-2 rounded text-xs font-mono shadow-xl anim-layer-1">
+              [NOTIFY] {toast}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>

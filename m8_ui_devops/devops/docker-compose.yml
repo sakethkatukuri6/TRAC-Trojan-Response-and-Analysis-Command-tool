@@ -1,0 +1,149 @@
+version: "3.8"
+
+networks:
+  trac-internal:
+    driver: bridge
+    internal: false
+  trac-lab-isolated:
+    driver: bridge
+    internal: true # Isolated without default gateway or internet egress
+
+volumes:
+  postgres_data:
+  vault_data:
+  reports_data:
+  grafana_data:
+
+services:
+  # ==========================================
+  # PROFILE: core (Persistence, Core API, M8 UI)
+  # ==========================================
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["core", "all"]
+    environment:
+      POSTGRES_USER: trac
+      POSTGRES_PASSWORD: trac_password_secure
+      POSTGRES_DB: trac_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - trac-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trac -d trac_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["core", "all"]
+    networks:
+      - trac-internal
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    profiles: ["core", "all"]
+    environment:
+      RABBITMQ_DEFAULT_USER: trac
+      RABBITMQ_DEFAULT_PASS: trac_mq_secure
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - trac-internal
+    restart: unless-stopped
+
+  m7-core-api:
+    build:
+      context: ../..
+      dockerfile: m7_core/Dockerfile
+    profiles: ["core", "all"]
+    environment:
+      DATABASE_URL: postgresql://trac:trac_password_secure@postgres:5432/trac_db
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://trac:trac_mq_secure@rabbitmq:5672/
+      JWT_SECRET: secops_jwt_secret_token_12345
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - trac-internal
+    restart: unless-stopped
+
+  m8-ui:
+    build:
+      context: ../..
+      dockerfile: m8_ui_devops/devops/Dockerfile.ui
+    profiles: ["core", "all"]
+    ports:
+      - "8080:8080"
+    environment:
+      M7_API_URL: http://m7-core-api:8000
+    depends_on:
+      - m7-core-api
+    networks:
+      - trac-internal
+    restart: unless-stopped
+
+  m8-reporter:
+    build:
+      context: ../..
+      dockerfile: m8_ui_devops/devops/Dockerfile.report
+    profiles: ["core", "all"]
+    volumes:
+      - reports_data:/app/data/reports
+    environment:
+      RABBITMQ_URL: amqp://trac:trac_mq_secure@rabbitmq:5672/
+      M7_API_URL: http://m7-core-api:8000
+    networks:
+      - trac-internal
+    restart: unless-stopped
+
+  # ==========================================
+  # PROFILE: analysis (M1, M4, M5, M6 Workers)
+  # ==========================================
+  m1-ingestion:
+    build:
+      context: ../..
+      dockerfile: m1_ingestion/Dockerfile
+    profiles: ["analysis", "all"]
+    volumes:
+      - vault_data:/app/data/vault
+    ports:
+      - "8001:8001"
+    networks:
+      - trac-internal
+    restart: unless-stopped
+
+  # ==========================================
+  # Observability (Prometheus & Grafana)
+  # ==========================================
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    profiles: ["core", "all"]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - trac-internal
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    profiles: ["core", "all"]
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=trac_admin
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - trac-internal
+    restart: unless-stopped
