@@ -1,0 +1,13 @@
+{
+  "event_id": "00000009-0000-4000-8000-000000000009",
+  "type": "dynamic.done",
+  "analysis_id": "00000003-0000-4000-8000-000000000003",
+  "vault_id": "00000003-0000-4000-8000-000000000003",
+  "emitted_at": "2026-10-10T09:00:00Z",
+  "producer": "M3",
+  "contract_version": "1.0.0",
+  "payload": {
+    "section": "dynamic",
+    "reverted": true
+  }
+}

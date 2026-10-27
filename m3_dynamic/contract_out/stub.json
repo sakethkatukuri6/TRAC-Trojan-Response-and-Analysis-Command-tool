@@ -1,0 +1,60 @@
+{
+  "dynamic": {
+    "status": "done",
+    "sandbox": {
+      "engine": "capev2",
+      "guest_os": "win10-x64",
+      "run_id": "run-0003",
+      "duration_s": 120,
+      "timeout_s": 120,
+      "network_mode": "simulated_internet",
+      "reverted": true
+    },
+    "process_tree": [
+      {
+        "pid": 2100,
+        "ppid": 900,
+        "name": "invoice_synthetic.exe"
+      },
+      {
+        "pid": 2144,
+        "ppid": 2100,
+        "name": "cmd.exe",
+        "command_line": "cmd.exe /c whoami"
+      }
+    ],
+    "file_events": [
+      {
+        "action": "create",
+        "target": "%APPDATA%\\svc\\helper.exe",
+        "pid": 2100
+      }
+    ],
+    "registry_events": [
+      {
+        "action": "modify",
+        "target": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Helper",
+        "pid": 2100
+      }
+    ],
+    "mutexes": [
+      "Global\\SYNTH_MTX_01"
+    ],
+    "dropped_files": [
+      {
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "name": "helper.exe",
+        "size_bytes": 51200
+      }
+    ],
+    "api_summary": {
+      "InternetOpenA": 6,
+      "RegSetValueExA": 1
+    },
+    "network_summary": {
+      "dns_queries": 4,
+      "http_requests": 6,
+      "tcp_connections": 6
+    }
+  }
+}
