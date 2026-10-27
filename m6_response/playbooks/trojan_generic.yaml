@@ -1,0 +1,21 @@
+﻿version: "1.0.0"
+name: "trojan_generic"
+description: "Response actions for generic trojan or loader samples."
+target_verdicts: ["malicious"]
+default_mode: "dry_run"
+actions:
+  - type: "block_hash"
+    target_from: "sample.sha256"
+    mode: "dry_run"
+    approval_required: false
+    status: "proposed"
+  - type: "block_domain"
+    target_from: "iocs.domain"
+    mode: "dry_run"
+    approval_required: false
+    status: "proposed"
+  - type: "export_iocs"
+    target_fixed: "stix"
+    mode: "dry_run"
+    approval_required: false
+    status: "proposed"

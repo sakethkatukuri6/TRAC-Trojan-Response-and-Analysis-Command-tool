@@ -1,0 +1,14 @@
+{
+  "pipeline": {
+    "status": "complete",
+    "stages": {
+      "ingest": "done",
+      "static": "done",
+      "dynamic": "done",
+      "iocs": "done",
+      "scoring": "done",
+      "response": "done",
+      "report": "done"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+﻿version: "1.0.0"
+name: "suspicious_review"
+description: "Review and notification actions for suspicious samples."
+target_verdicts: ["suspicious"]
+default_mode: "dry_run"
+actions:
+  - type: "open_ticket"
+    target_fixed: "soc_queue"
+    mode: "dry_run"
+    approval_required: false
+    status: "proposed"
+  - type: "notify"
+    target_fixed: "tier2_analyst"
+    mode: "dry_run"
+    approval_required: false
+    status: "proposed"
+  - type: "export_iocs"
+    target_fixed: "json"
+    mode: "dry_run"
+    approval_required: false
+    status: "proposed"
