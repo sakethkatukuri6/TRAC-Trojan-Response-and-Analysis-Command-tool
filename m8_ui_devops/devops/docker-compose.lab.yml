@@ -1,0 +1,27 @@
+version: "3.8"
+
+# Isolated Sandbox Lab Compose - Strictly no default gateway or internet egress.
+# All communications between guest VMs and sandbox harness use host-only networking.
+
+networks:
+  lab-airgap:
+    driver: bridge
+    internal: true # No internet routing / No NAT
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.0.2.0/24 # RFC 5737 Documentation Network
+
+services:
+  sandbox-harness:
+    image: python:3.11-slim
+    command: ["python", "-m", "http.server", "8080"]
+    networks:
+      - lab-airgap
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    security_opt:
+      - no-new-privileges:true

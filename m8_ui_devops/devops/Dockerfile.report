@@ -1,0 +1,10 @@
+# Production Dockerfile for TRAC M8 Forensic Report Generation Worker
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir reportlab jinja2 jsonschema pyyaml pydantic
+
+COPY . /app
+
+CMD ["python", "-m", "m8_ui_devops.reporting.worker"]

@@ -1,0 +1,65 @@
+name: TRAC CI & Contract Gate
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  contract-gate:
+    name: Contract Schema & Event Validation Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r contract/requirements.txt pytest
+
+      - name: Run contract unit tests
+        run: |
+          python -m unittest discover -s contract/tests -v
+
+      - name: Run CI Module Gate across all modules
+        run: |
+          python contract/tools/check_all.py --repo-root .
+
+  unit-tests:
+    name: Module Unit Tests & Test Suites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install module dependencies
+        run: |
+          pip install -r m8_ui_devops/requirements.txt
+
+      - name: Run M8 Unit Tests
+        run: |
+          pytest m8_ui_devops/tests -v
+
+  security-scan:
+    name: Trivy Vulnerability & Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Trivy vulnerability scanner in repo mode
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          ignore-unfixed: true
+          severity: "CRITICAL,HIGH"
+          format: "table"

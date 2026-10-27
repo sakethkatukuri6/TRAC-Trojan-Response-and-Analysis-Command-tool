@@ -1,0 +1,17 @@
+{
+  "sample": {
+    "vault_id": "721ab939-55cf-470e-ad0b-d6fc70a9a794",
+    "sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+    "md5": "44d88612fea8a8f36de82e1278abb02f",
+    "size_bytes": 68,
+    "file_type": "other",
+    "original_name": "eicar.com",
+    "received_at": "2026-10-27T01:32:38.767960+00:00",
+    "stored_defanged": true,
+    "stored_encrypted": true,
+    "sha1": "3395856ce81f2b7382dee72602f798b642f14140",
+    "mime": "application/octet-stream",
+    "submitter": "analyst1",
+    "clamav_result": "detected"
+  }
+}

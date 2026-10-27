@@ -1,0 +1,42 @@
+{
+  "a18fbf1f368367b3cc0c86b568a819b198267a0c807a639ef7a628f700bfdbf8": {
+    "vault_id": "8ec7bab5-5a77-4be5-8436-71b84c27de35",
+    "sha256": "a18fbf1f368367b3cc0c86b568a819b198267a0c807a639ef7a628f700bfdbf8",
+    "md5": "83b97d19e8feb035142cd5c73578e4bc",
+    "sha1": "906c96761c709256640154cfba786cbd493003d1",
+    "size_bytes": 8,
+    "file_type": "pe",
+    "original_name": "test.exe",
+    "received_at": "2026-10-27T01:41:10.907690+00:00"
+  },
+  "fedc60196d13ddf6030b809e3dc6dbe0cf4f3bdc0f6558493f0a9a157726a94d": {
+    "vault_id": "2b853e29-4816-4585-a67a-c4b7d427edd0",
+    "sha256": "fedc60196d13ddf6030b809e3dc6dbe0cf4f3bdc0f6558493f0a9a157726a94d",
+    "md5": "d5606ef4140d2bfac6dc091168cf2841",
+    "sha1": "0ebd3b7574a46c5ac4b6858f4770925cda082883",
+    "size_bytes": 20,
+    "file_type": "pe",
+    "original_name": "direct.exe",
+    "received_at": "2026-10-27T01:41:58.546064+00:00"
+  },
+  "e7a4a943d76d75c4a0943bfd56acd92f2062095573bb221de214988ef289b5bf": {
+    "vault_id": "6f698a5d-5802-43b1-826f-9e24154d5f31",
+    "sha256": "e7a4a943d76d75c4a0943bfd56acd92f2062095573bb221de214988ef289b5bf",
+    "md5": "7dac1c8b7416ea383940c896d7c2ff75",
+    "sha1": "75e0108ae76f54d8c55d834e7db379b3be8ab6b9",
+    "size_bytes": 25,
+    "file_type": "pe",
+    "original_name": "malware_sample.exe",
+    "received_at": "2026-10-27T01:42:26.541732+00:00"
+  },
+  "d1252f0fe856548a0e930e1ddf1db7d8b19c533f83641362e4b7756783afb1c1": {
+    "vault_id": "51834503-1abe-4de5-b9ca-e2011cd1f329",
+    "sha256": "d1252f0fe856548a0e930e1ddf1db7d8b19c533f83641362e4b7756783afb1c1",
+    "md5": "dbe6ca73caaea01c85ea55fa698c5c56",
+    "sha1": "d420817355d1b05491a79844f166b1579e31bf79",
+    "size_bytes": 24,
+    "file_type": "pe",
+    "original_name": "sample_first.exe",
+    "received_at": "2026-10-27T01:42:26.559372+00:00"
+  }
+}

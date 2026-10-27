@@ -1,0 +1,13 @@
+{
+  "event_id": "049139e1-1619-40c9-b17a-c2d85ab91002",
+  "type": "sample.received",
+  "analysis_id": "ad58d80f-7b3a-4303-8643-3ec9bd70a3b9",
+  "vault_id": "721ab939-55cf-470e-ad0b-d6fc70a9a794",
+  "emitted_at": "2026-10-27T01:32:38.768003+00:00",
+  "producer": "M1",
+  "contract_version": "1.0.0",
+  "payload": {
+    "sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+    "file_type": "other"
+  }
+}

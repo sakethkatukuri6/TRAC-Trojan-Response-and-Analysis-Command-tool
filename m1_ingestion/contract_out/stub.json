@@ -1,0 +1,15 @@
+{
+  "sample": {
+    "vault_id": "00000003-0000-4000-8000-000000000003",
+    "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "md5": "dddddddddddddddddddddddddddddddd",
+    "size_bytes": 245760,
+    "file_type": "pe",
+    "original_name": "invoice_synthetic.exe",
+    "received_at": "2026-10-10T09:00:00Z",
+    "submitter": "analyst1",
+    "stored_defanged": true,
+    "stored_encrypted": true,
+    "clamav_result": "not_run"
+  }
+}
