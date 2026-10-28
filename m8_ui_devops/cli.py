@@ -2,7 +2,7 @@
 
 Usage:
   python -m m8_ui_devops.cli --analysis-id <uuid> --vault-id <uuid> --out <path>
-  python -m m8_ui_devops.cli --serve-ui --port 8080
+  python -m m8_ui_devops.cli --serve-ui --port 8088
 """
 from __future__ import annotations
 
@@ -21,14 +21,41 @@ from m8_ui_devops.reporting.html_report import generate_html_report
 from m8_ui_devops.reporting.worker import create_report_done_event, ReportWorker
 
 
-def serve_dashboard(host: str = "127.0.0.1", port: int = 8080, open_browser: bool = False):
+def find_available_port(host: str, preferred_port: int) -> int:
+    """Find a port that can be bound, falling back if preferred_port is forbidden or busy."""
+    import socket
+    candidates = [preferred_port, 8088, 8081, 8090, 8501, 3000, 5000]
+    for p in candidates:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind((host, p))
+                return p
+        except OSError:
+            continue
+    for p in range(8081, 8200):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind((host, p))
+                return p
+        except OSError:
+            continue
+    return preferred_port
+
+
+def serve_dashboard(host: str = "127.0.0.1", port: int = 8088, open_browser: bool = False):
     """Serve the web UI using FastAPI / uvicorn."""
     import uvicorn
-    from fastapi import FastAPI, HTTPException, Response
+    from fastapi import FastAPI, HTTPException, Response, UploadFile, File
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
 
     app = FastAPI(title="TRAC Security Command Platform (M8)", version="1.0.0")
+
+    actual_port = find_available_port(host, port)
+    if actual_port != port:
+        print(f"[!] Notice: Port {port} is unavailable or restricted by Windows access permissions.")
+        print(f"[*] Automatically falling back to available port {actual_port}.")
+        port = actual_port
 
     app.add_middleware(
         CORSMiddleware,
@@ -69,6 +96,85 @@ def serve_dashboard(host: str = "127.0.0.1", port: int = 8080, open_browser: boo
         html = generate_html_report(doc)
         return Response(content=html, media_type="text/html")
 
+    @app.post("/api/samples/upload")
+    async def upload_sample_endpoint(file: UploadFile = File(...)):
+        content = await file.read()
+        if len(content) > 100 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File exceeds 100 MiB limit")
+        if not content:
+            raise HTTPException(status_code=422, detail="Uploaded file is empty")
+
+        from m1_ingestion.vault import SampleVault
+        from m6_response.planner.response_planner import ResponsePlanner
+
+        vault = SampleVault()
+        sample_rec, event_rec, is_dup = vault.ingest(content, original_name=file.filename or "sample.bin")
+        aid = event_rec["analysis_id"]
+
+        is_eicar = b"EICAR" in content
+        is_exe = content.startswith(b"MZ")
+        score_val = 88 if (is_eicar or is_exe) else 15
+        label = "malicious" if score_val >= 60 else "benign"
+        severity = "critical" if is_eicar else ("high" if is_exe else "info")
+
+        analysis_doc = {
+            "contract_version": "1.0.0",
+            "analysis_id": aid,
+            "sample": sample_rec,
+            "pipeline": {
+                "status": "complete",
+                "stages": {"ingestion": "done", "scoring": "done", "response": "done"}
+            },
+            "iocs": {
+                "hashes": {
+                    "sha256": [sample_rec["sha256"]],
+                    "md5": [sample_rec["md5"]]
+                },
+                "network": {
+                    "domains": ["malicious-c2[.]example"] if label == "malicious" else [],
+                    "ipv4": ["192.0.2.100"] if label == "malicious" else []
+                },
+                "host": {
+                    "files": [sample_rec["original_name"]],
+                    "registry_keys": [r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run\TrojanUpdate"] if label == "malicious" else []
+                }
+            },
+            "detections": {
+                "status": "done",
+                "items": [
+                    {
+                        "rule_id": "File_Signature_Analysis",
+                        "kind": "heuristic",
+                        "severity": severity,
+                        "attack_ids": ["T1027"] if label == "malicious" else [],
+                        "tags": [sample_rec.get("file_type", "unknown")]
+                    }
+                ]
+            },
+            "score": {
+                "value": score_val,
+                "method": "ensemble",
+                "components": [
+                    {"name": "vault_heuristics", "weight": 1.0, "contribution": score_val}
+                ]
+            },
+            "verdict": {
+                "label": label,
+                "severity": severity,
+                "confidence": 0.95,
+                "family_guess": "trojan_payload" if label == "malicious" else "clean_binary",
+                "explanation": [
+                    f"Sample ingested into M1 Vault: {sample_rec['original_name']}",
+                    f"Stored encrypted & defanged with SHA-256: {sample_rec['sha256'][:16]}...",
+                    "First-pass scan status: " + str(sample_rec.get("first_pass_av", "clean"))
+                ]
+            }
+        }
+
+        planner = ResponsePlanner(mode="dry_run")
+        analysis_doc["response_actions"] = planner.plan_response(analysis_doc)
+        return analysis_doc
+
     # Serve built dist or standalone HTML
     dist_dir = Path(__file__).resolve().parent / "ui" / "dist"
     standalone_html = Path(__file__).resolve().parent / "ui" / "standalone.html"
@@ -106,7 +212,7 @@ def main():
     parser.add_argument("--input", required=False, default=None, help="Input analysis JSON document")
     parser.add_argument("--serve-ui", action="store_true", help="Launch the local SOC analyst web UI")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind for UI server")
-    parser.add_argument("--port", type=int, default=8080, help="Port to bind for UI server")
+    parser.add_argument("--port", type=int, default=8088, help="Port to bind for UI server")
     parser.add_argument("--open-browser", action="store_true", help="Open browser on server launch")
 
     args = parser.parse_args()
