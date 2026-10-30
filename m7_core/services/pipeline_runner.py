@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 import uuid
 import zipfile
@@ -145,7 +146,7 @@ def run_full_pipeline(
     # Prepare cleaned dynamic section without internal markers
     clean_dynamic = dict(dynamic_res)
     clean_dynamic.pop("_static_capabilities", None)
-    clean_dynamic.pop("_error", None)
+    sandbox_error = clean_dynamic.pop("_error", None)
 
     # 6. M6 Response Planner
     partial_doc: Dict[str, Any] = {
@@ -157,6 +158,15 @@ def run_full_pipeline(
     }
     planner = ResponsePlanner(mode="dry_run")
     response_actions = planner.plan_response(partial_doc)
+
+    pipeline_errors: list[Dict[str, Any]] = []
+    if dynamic_res.get("status") == "failed":
+        pipeline_errors.append({
+            "stage": "dynamic",
+            "code": "SANDBOX_FAILED",
+            "message": (sandbox_error or "The configured sandbox did not return a result.")[:500],
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
 
     # 7. Assemble Full Contract Document
     doc: Dict[str, Any] = {
@@ -183,5 +193,8 @@ def run_full_pipeline(
         "verdict": scoring_res["verdict"],
         "response_actions": response_actions,
     }
+
+    if pipeline_errors:
+        doc["pipeline"]["errors"] = pipeline_errors
 
     return doc

@@ -10,10 +10,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import uuid
 from typing import Any, Dict, List, Mapping, Optional, Set
 from urllib import error, request
+
+
+# Credentials embedded in a URL must never reach an operator-facing message.
+_URL_CREDENTIALS = re.compile(r"(?<=://)[^/\s@]+@")
 
 
 BEHAVIOR_RULES: Dict[str, Dict[str, Any]] = {
@@ -100,6 +105,11 @@ def _submit_to_cape(data: bytes, filename: str, base_url: str, token: Optional[s
     raise TimeoutError(f"CAPE task {task_id} did not finish within {timeout_s} seconds")
 
 
+def _safe_error(exc: BaseException) -> str:
+    """Return a bounded, credential-free operator-facing error message."""
+    return _URL_CREDENTIALS.sub("", str(exc)).strip()[:500]
+
+
 def infer_behavior(data: bytes, file_type: str, static_result: Dict[str, Any], filename: str = "sample.exe", cape_url: Optional[str] = None, cape_token: Optional[str] = None, timeout_s: int = 180) -> Dict[str, Any]:
     """Return observed CAPE telemetry, or explicitly skip an unconfigured sandbox."""
     capabilities = _capabilities(data, static_result) if file_type == "pe" else {}
@@ -112,4 +122,4 @@ def infer_behavior(data: bytes, file_type: str, static_result: Dict[str, Any], f
         observed["_static_capabilities"] = capabilities
         return observed
     except (error.URLError, error.HTTPError, ValueError, RuntimeError, TimeoutError) as exc:
-        return {"status": "failed", "_static_capabilities": capabilities, "_error": str(exc)[:500]}
+        return {"status": "failed", "_static_capabilities": capabilities, "_error": _safe_error(exc)}

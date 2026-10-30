@@ -6,12 +6,14 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
+from m8_ui_devops.evidence import build_presentation
 from m8_ui_devops.reporting.models import ReportData
 
 
 def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = None) -> str:
     """Compile a self-contained, responsive HTML report from analysis document."""
     d = ReportData.from_doc(doc)
+    sandbox = build_presentation(doc)["sandbox"]
 
     # Severity styling
     sev = d.verdict_severity.lower()
@@ -55,7 +57,7 @@ def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = N
         <tr>
             <td class="font-mono text-amber">{html.escape(a.get('id', 'N/A'))}</td>
             <td class="font-semibold">{html.escape(a.get('tactic', 'N/A').upper())}</td>
-            <td>{html.escape(a.get('evidence', 'Observed in telemetry'))}</td>
+            <td>{html.escape(a.get('evidence') or 'No evidence recorded')}</td>
         </tr>
         """
 
@@ -83,6 +85,32 @@ def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = N
             <strong class="font-mono">{html.escape(p.get('name', 'unnamed'))}</strong>
             {cmd}
         </div>
+        """
+
+    # Sandbox block: runtime facts appear only when the sandbox actually ran.
+    if sandbox["observed"]:
+        sb = sandbox["telemetry"].get("sandbox") or {}
+        sandbox_block = f"""
+            <div style="margin-bottom: 12px; font-size: 12px; color: var(--text-dim);">
+                Engine: <span class="font-bold text-white">{html.escape(str(sb.get('engine', '')).upper())}</span> |
+                Guest: <span class="font-bold text-white">{html.escape(str(sb.get('guest_os', '')))}</span> |
+                Network Mode: <span class="font-bold text-white">{html.escape(str(sb.get('network_mode', '')).upper())}</span>
+            </div>
+            {proc_list or '<div class="text-muted">The sandbox observed no spawned processes.</div>'}
+        """
+    else:
+        sandbox_block = f"""
+            <div style="font-size: 12px; color: var(--text-dim);">{html.escape(sandbox['detail'])}</div>
+            <div class="text-muted" style="margin-top: 10px; font-size: 12px;">
+                No process tree, file drop, registry change, mutex, beacon or timing is reported for this analysis
+                because none was observed.
+            </div>
+        """
+        if sandbox["error"]:
+            sandbox_block += f"""
+            <div style="margin-top: 10px; padding: 8px; border: 1px solid var(--danger); border-radius: 4px; color: #fca5a5; font-size: 12px;">
+                Operator error: {html.escape(sandbox['error'])}
+            </div>
         """
 
     # Actions rows
@@ -401,7 +429,7 @@ def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = N
         <!-- MITRE ATT&CK Matrix -->
         {f'''
         <div class="card">
-            <div class="card-header">3. MITRE ATT&CK Matrix Mapping</div>
+            <div class="card-header">3. MITRE ATT&CK Capability Mapping (Static Evidence)</div>
             <table class="table">
                 <thead><tr><th>Technique ID</th><th>Tactic</th><th>Evidence</th></tr></thead>
                 <tbody>{attack_rows}</tbody>
@@ -418,15 +446,10 @@ def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = N
             </table>
         </div>
 
-        <!-- Dynamic Execution & Behavior -->
+        <!-- Sandbox Telemetry -->
         <div class="card">
-            <div class="card-header">5. Dynamic Telemetry & Process Tree</div>
-            <div style="margin-bottom: 12px; font-size: 12px; color: var(--text-dim);">
-                Engine: <span class="font-bold text-white">{html.escape(d.sandbox_engine.upper())}</span> |
-                Guest: <span class="font-bold text-white">{html.escape(d.guest_os)}</span> |
-                Network Mode: <span class="font-bold text-white">{html.escape(d.network_mode.upper())}</span>
-            </div>
-            {proc_list or '<div class="text-muted">No spawned processes detected.</div>'}
+            <div class="card-header">5. {html.escape(sandbox['label'])}</div>
+            {sandbox_block}
         </div>
 
         <!-- Incident Response Actions -->

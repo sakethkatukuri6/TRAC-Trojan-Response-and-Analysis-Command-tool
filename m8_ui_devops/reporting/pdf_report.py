@@ -1,6 +1,7 @@
 """Publication-grade forensic PDF report generator for TRAC Platform."""
 from __future__ import annotations
 
+import html
 import io
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -21,6 +22,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from m8_ui_devops.evidence import build_presentation
 from m8_ui_devops.reporting.models import ReportData
 
 
@@ -69,8 +71,9 @@ class NumberedCanvas(canvas.Canvas):
 class PDFReportGenerator:
     """Generates rigorous, audit-ready malware analysis reports."""
 
-    def __init__(self, data: ReportData):
+    def __init__(self, data: ReportData, sandbox: Dict[str, Any]):
         self.data = data
+        self.sandbox = sandbox
         self.styles = getSampleStyleSheet()
         self._init_custom_styles()
 
@@ -301,7 +304,7 @@ class PDFReportGenerator:
 
     def _build_mitre_attack_table(self) -> KeepTogether:
         items = [
-            Paragraph("3. MITRE ATT&CK Matrix Observed Techniques", self.h1_style),
+            Paragraph("3. MITRE ATT&CK Capability Mapping (Static Evidence)", self.h1_style),
             HRFlowable(width="100%", thickness=1, color=colors.HexColor("#0f172a"), spaceAfter=6),
         ]
         rows = [[
@@ -313,7 +316,7 @@ class PDFReportGenerator:
             rows.append([
                 Paragraph(att.get("id", "N/A"), self.mono_style),
                 Paragraph(att.get("tactic", "N/A").upper(), self.body_style),
-                Paragraph(att.get("evidence", "Observed during pipeline analysis"), self.body_style),
+                Paragraph(att.get("evidence") or "No evidence recorded", self.body_style),
             ])
         tbl = Table(rows, colWidths=[100, 140, 300])
         tbl.setStyle(TableStyle([
@@ -402,16 +405,34 @@ class PDFReportGenerator:
         return KeepTogether(items)
 
     def _build_dynamic_analysis_section(self) -> KeepTogether:
+        sandbox = self.sandbox
         items = [
-            Paragraph("6. Dynamic Sandbox Behavioral Findings", self.h1_style),
+            Paragraph(f"6. {sandbox['label']}", self.h1_style),
             HRFlowable(width="100%", thickness=1, color=colors.HexColor("#0f172a"), spaceAfter=6),
         ]
+
+        if not sandbox["observed"]:
+            items.append(Paragraph(html.escape(sandbox["detail"]), self.body_style))
+            if sandbox["error"]:
+                items.append(Spacer(1, 4))
+                items.append(Paragraph(f"<b>Operator error:</b> {html.escape(sandbox['error'])}", self.body_style))
+            items.append(Spacer(1, 4))
+            items.append(Paragraph(
+                "<i>No process tree, file drop, registry change, mutex, beacon or timing is reported for this "
+                "analysis because none was observed.</i>",
+                self.body_style,
+            ))
+            return KeepTogether(items)
+
+        sb = sandbox["telemetry"].get("sandbox") or {}
+        network = sandbox["telemetry"].get("network_summary") or {}
         sb_summary = Paragraph(
-            f"<b>Engine:</b> {self.data.sandbox_engine.upper()} | <b>Guest OS:</b> {self.data.guest_os} | "
-            f"<b>Network Mode:</b> {self.data.network_mode.upper()} [Real egress strictly forbidden]<br/>"
-            f"<b>Network Summary:</b> DNS: {self.data.network_summary.get('dns_queries', 0)}, "
-            f"HTTP: {self.data.network_summary.get('http_requests', 0)}, "
-            f"TCP: {self.data.network_summary.get('tcp_connections', 0)}",
+            f"<b>Engine:</b> {html.escape(str(sb.get('engine', '')).upper())} | "
+            f"<b>Guest OS:</b> {html.escape(str(sb.get('guest_os', '')))} | "
+            f"<b>Network Mode:</b> {html.escape(str(sb.get('network_mode', '')).upper())} [Real egress strictly forbidden]<br/>"
+            f"<b>Network Summary:</b> DNS: {network.get('dns_queries', 0)}, "
+            f"HTTP: {network.get('http_requests', 0)}, "
+            f"TCP: {network.get('tcp_connections', 0)}",
             self.body_style,
         )
         items.append(sb_summary)
@@ -481,10 +502,15 @@ class PDFReportGenerator:
         return KeepTogether(items)
 
     def _build_audit_signoff(self) -> Table:
+        telemetry_note = (
+            "All sandbox telemetry was gathered within an isolated test harness without external network routing."
+            if self.sandbox["observed"]
+            else "No sandbox was executed for this analysis, so no runtime telemetry is claimed."
+        )
         text = Paragraph(
             "<b>Forensic Chain-of-Custody Certification:</b><br/>"
             "This report was automatically synthesized by TRAC Module M8 in compliance with Contract v1.0.0. "
-            "All sandbox telemetry was gathered within an isolated test harness without external network routing. "
+            + telemetry_note + " "
             "Indicators have been sanitized and defanged. Cryptographic hashes reflect verified immutable sample payload.",
             self.body_style,
         )
@@ -500,5 +526,5 @@ class PDFReportGenerator:
 def generate_pdf_report(doc: Dict[str, Any], output_path: str | Path | io.BytesIO):
     """Entry point to compile a full PDF report from an analysis document."""
     data = ReportData.from_doc(doc)
-    generator = PDFReportGenerator(data)
+    generator = PDFReportGenerator(data, build_presentation(doc)["sandbox"])
     generator.generate(output_path)
