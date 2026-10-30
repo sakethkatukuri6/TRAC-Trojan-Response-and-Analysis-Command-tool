@@ -23,10 +23,14 @@ The safe, evidence-backed path is implemented in `m7_core/services/pipeline_runn
 6. M6 creates only dry-run response actions.
 
 For actual dynamic execution, M3 contains a CAPEv2 HTTP API adapter. It is
-enabled only when `TRAC_CAPE_URL` is set (optional bearer token:
-`TRAC_CAPE_TOKEN`). The configured CAPE instance must be an isolated lab with
-snapshot reversion and simulated/contained networking. Never execute malware
-on the developer workstation.
+enabled only when `TRAC_CAPE_URL` is set, and authenticates with CAPE's
+documented `Authorization: Token <TRAC_CAPE_TOKEN>` header. The configured CAPE
+instance must be an isolated lab whose guest reverts to a clean snapshot: TRAC
+publishes `sandbox.reverted = true` only when the operator attests it with
+`TRAC_CAPE_SNAPSHOT_REVERTED=true`, and every other path (unreachable host,
+rejected token, timeout, failed or malformed report, non-isolated route) fails
+closed with a sanitised error. See `CAPE_LOCAL_LAB.md`. Never execute malware on
+the developer workstation.
 
 ## Verified checks
 

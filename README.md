@@ -109,10 +109,15 @@ only module that writes the database.
 | `DATABASE_URL` | M7 database URI | `sqlite:///./trac_dev.db` |
 | `VAULT_STORAGE_PATH` | Directory holding encrypted, defanged samples | `m1_ingestion/data/vault` |
 | `VAULT_ENCRYPTION_KEY` | Fernet key for the vault | generated into `vault.key` |
-| `TRAC_CAPE_URL` | CAPEv2 base URL; unset means the sandbox is skipped | unset |
-| `TRAC_CAPE_TOKEN` | Bearer token for CAPEv2 | unset |
+| `TRAC_CAPE_URL` | CAPEv2 API base (`http://cape-host:8000` or `…/apiv2`); unset means the sandbox is skipped | unset |
+| `TRAC_CAPE_TOKEN` | CAPEv2 API token, sent as `Authorization: Token <value>` | unset |
+| `TRAC_CAPE_SNAPSHOT_REVERTED` | Operator attestation that the guest reverts to its clean snapshot after every task; without it a completed CAPE run still fails closed | unset |
 | `MODULE_SECRET`, `USER_SECRET` | M7 API JWT signing keys | `.secrets` file (refused in production) |
 | `TRAC_ENV`, `REQUIRE_DEPLOYMENT_SECRETS` | Fail closed unless secrets are provisioned | unset |
+
+Building or vetting the CAPEv2 lab that `m3_dynamic` submits to - host isolation,
+management-only API exposure, snapshot-reversion verification and the preflight
+checks - is covered in [CAPE_LOCAL_LAB.md](CAPE_LOCAL_LAB.md).
 
 `run.bat` wraps these commands in an interactive menu (`run.bat gate`,
 `run.bat contract-test`, `run.bat ui`, `run.bat server`).
@@ -125,10 +130,12 @@ only module that writes the database.
 .\.venv\Scripts\python.exe contract\tools\check_all.py --repo-root .
 ```
 
-On a clean install of `requirements.txt` the expected results are `153 passed`,
+On a clean install of `requirements.txt` the expected results are `203 passed`,
 `Ran 21 tests ... OK`, and `ok` for M1 through M8. The module suite includes
+`m3_dynamic/tests/test_cape_adapter.py`, which drives the CAPEv2 adapter through a
+mocked HTTP transport (no sandbox, no credentials, nothing executed);
 `m7_core/tests/test_real_pe_static.py`, which parses a generated benign PE32+
-image (never executed) to prove the real `pefile` path, and
+image (never executed) to prove the real `pefile` path; and
 `m7_core/tests/test_zip_intake.py`, which covers the archive rejection rules.
 
 ## Changing the contract
