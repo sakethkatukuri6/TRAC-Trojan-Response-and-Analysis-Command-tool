@@ -9,7 +9,7 @@ from m7_core.services.pipeline_runner import run_full_pipeline
 from m7_core.tests.benign_pe import build_benign_pe
 from m8_ui_devops.reporting.pdf_report import generate_pdf_report
 from m8_ui_devops.reporting.html_report import generate_html_report
-from m8_ui_devops.reporting.models import ReportData
+from m8_ui_devops.reporting.models import NOT_OBSERVED, ReportData
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -154,6 +154,45 @@ class TestRealPeEvidenceInReports(unittest.TestCase):
             for name in (".text", ".rdata"):
                 self.assertIn(name, markup)
             self.assertNotIn("<script", markup, "Report must not embed executable script")
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+
+class TestSandboxClaimsFailClosed(unittest.TestCase):
+    """A report may not assert isolation, egress control or a verdict it never observed."""
+
+    def _doc(self, name):
+        with open(ROOT / "contract" / "examples" / name, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_absent_sandbox_data_does_not_default_to_isolated(self):
+        for name in ("valid_eicar_test_file.json", "valid_in_progress_after_static.json"):
+            with self.subTest(fixture=name):
+                data = ReportData.from_doc(self._doc(name))
+                self.assertEqual(data.network_mode, NOT_OBSERVED)
+
+    def test_html_report_for_an_unexecuted_sandbox_makes_no_isolation_claim(self):
+        markup = generate_html_report(self._doc("valid_eicar_test_file.json"))
+        self.assertNotIn("No live outbound connections established", markup)
+        self.assertNotIn("isolated lab network", markup)
+        self.assertIn("no runtime execution or isolation claim is made", markup)
+
+    def test_observed_run_keeps_only_the_network_mode_the_sandbox_returned(self):
+        observed = self._doc("valid_benign_test_binary.json")
+        self.assertEqual(ReportData.from_doc(observed).network_mode, "isolated")
+        self.assertIn("ISOLATED", generate_html_report(observed))
+
+    def test_pdf_body_does_not_assert_egress_control(self):
+        import pypdf
+
+        doc = self._doc("valid_synthetic_trojan_record.json")
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        try:
+            generate_pdf_report(doc, tmp_path)
+            text = "".join(page.extract_text() for page in pypdf.PdfReader(str(tmp_path)).pages)
+            self.assertNotIn("strictly forbidden", text)
         finally:
             if tmp_path.exists():
                 tmp_path.unlink()

@@ -433,7 +433,7 @@ class PDFReportGenerator:
         sb_summary = Paragraph(
             f"<b>Engine:</b> {html.escape(str(sb.get('engine', '')).upper())} | "
             f"<b>Guest OS:</b> {html.escape(str(sb.get('guest_os', '')))} | "
-            f"<b>Network Mode:</b> {html.escape(str(sb.get('network_mode', '')).upper())} [Real egress strictly forbidden]<br/>"
+            f"<b>Network Mode:</b> {html.escape(str(sb.get('network_mode', '')).upper())}<br/>"
             f"<b>Network Summary:</b> DNS: {network.get('dns_queries', 0)}, "
             f"HTTP: {network.get('http_requests', 0)}, "
             f"TCP: {network.get('tcp_connections', 0)}",

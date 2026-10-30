@@ -167,6 +167,13 @@ class UploadRouteTests(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["status"], "ok")
 
+    def test_console_serves_the_standalone_view_not_the_stale_bundle(self):
+        res = self.client.get("/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.text, DASHBOARD.read_text(encoding="utf-8"))
+        self.assertNotIn("simulated_internet", res.text)
+        self.assertNotIn("run-0003", res.text)
+
     def test_upload_returns_the_real_pipeline_document(self):
         res = self.client.post(
             "/api/samples/upload",

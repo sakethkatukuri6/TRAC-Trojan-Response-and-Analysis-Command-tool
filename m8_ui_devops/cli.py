@@ -50,7 +50,6 @@ def create_dashboard_app(host: str = "127.0.0.1", port: int = 8088):
     """
     from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.staticfiles import StaticFiles
     from sqlalchemy.orm import Session
 
     from m7_core.database import get_db
@@ -134,21 +133,20 @@ def create_dashboard_app(host: str = "127.0.0.1", port: int = 8088):
         html = generate_html_report(doc)
         return Response(content=html, media_type="text/html")
 
-    # The console is version controlled at ui/standalone.html. A React build in
-    # ui/dist is only used when the standalone console is unavailable.
+    # The console is version controlled at ui/standalone.html, which renders the
+    # presentation M7/M8 produce. ui/dist is a stale React build whose screen
+    # invents verdicts and sandbox telemetry from the uploaded filename, so it is
+    # deliberately not served.
     standalone_html = Path(__file__).resolve().parent / "ui" / "standalone.html"
-    dist_index = Path(__file__).resolve().parent / "ui" / "dist" / "index.html"
 
     if standalone_html.exists():
         @app.get("/")
         def serve_index():
             return Response(content=standalone_html.read_text(encoding="utf-8"), media_type="text/html")
-    elif dist_index.exists():
-        app.mount("/", StaticFiles(directory=str(dist_index.parent), html=True), name="ui")
     else:
         @app.get("/")
         def serve_fallback():
-            return {"message": "TRAC M8 UI server running."}
+            return {"message": "TRAC M8 UI server running.", "console": "ui/standalone.html is missing"}
 
     return app
 

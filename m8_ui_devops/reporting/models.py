@@ -5,6 +5,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+# A report may never imply a condition it did not observe. Absent sandbox fields
+# render as this value rather than a passing default.
+NOT_OBSERVED = "not_observed"
+
 
 @dataclass
 class ReportData:
@@ -119,7 +123,7 @@ class ReportData:
             dynamic_status=dynamic.get("status", "skipped"),
             sandbox_engine=sb.get("engine", "N/A"),
             guest_os=sb.get("guest_os", "N/A"),
-            network_mode=sb.get("network_mode", "isolated"),
+            network_mode=sb.get("network_mode") or NOT_OBSERVED,
             process_tree=dynamic.get("process_tree", []),
             file_events=dynamic.get("file_events", []),
             registry_events=dynamic.get("registry_events", []),
