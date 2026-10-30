@@ -25,6 +25,13 @@ NOT_CONFIGURED_DETAIL = (
 NOT_RUN_DETAIL = "The dynamic stage did not complete for this analysis."
 GENERIC_FAILURE_DETAIL = "The configured sandbox did not return a result for this run."
 
+# An absent field means the engine never ran; an empty list means it ran and found
+# nothing. Collapsing the two would credit this run with checks it did not perform.
+YARA_NOT_ASSESSED = "Not assessed: no YARA ruleset is loaded in M2."
+YARA_NO_HITS = "The ruleset ran and no rule matched."
+INTEL_NOT_ASSESSED = "Not queried: no threat-intelligence provider is configured."
+INTEL_NO_HITS = "Providers were queried and returned no hit."
+
 
 def sandbox_status_label(status: Optional[str]) -> str:
     """Map a dynamic stage status onto its operator-facing label."""
@@ -58,6 +65,13 @@ def _observed_telemetry(dynamic: Dict[str, Any]) -> Dict[str, Any]:
         "api_summary": dynamic.get("api_summary") or {},
         "network_summary": dynamic.get("network_summary") or {},
     }
+
+
+def _engine_detail(section: Dict[str, Any], key: str, not_assessed: str, no_hits: str) -> str:
+    """Wording for an optional engine field, so "not run" never reads as "no findings"."""
+    if key not in section:
+        return not_assessed
+    return no_hits if not (section[key] or []) else ""
 
 
 def build_presentation(doc: Dict[str, Any]) -> Dict[str, Any]:
@@ -109,7 +123,8 @@ def build_presentation(doc: Dict[str, Any]) -> Dict[str, Any]:
             "exports": pe.get("exports") or [],
         },
         "strings": static.get("strings") or {},
-        "yara_matches": static.get("yara_matches") or [],
+        "yara_matches": static.get("yara_matches"),
+        "yara_detail": _engine_detail(static, "yara_matches", YARA_NOT_ASSESSED, YARA_NO_HITS),
         "embedded_urls": static.get("embedded_urls") or [],
         "sample": {
             "vault_id": sample.get("vault_id"),
@@ -128,7 +143,8 @@ def build_presentation(doc: Dict[str, Any]) -> Dict[str, Any]:
         "label": CAPABILITY_LABEL,
         "techniques": iocs.get("attack_techniques") or [],
         "detections": detections.get("items") or [],
-        "intel_hits": detections.get("intel_hits") or [],
+        "intel_hits": detections.get("intel_hits"),
+        "intel_detail": _engine_detail(detections, "intel_hits", INTEL_NOT_ASSESSED, INTEL_NO_HITS),
     }
 
     iocs_view: Dict[str, Any] = {

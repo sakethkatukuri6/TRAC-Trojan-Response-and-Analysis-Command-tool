@@ -55,13 +55,23 @@
     const { useState, useEffect, useRef } = React;
 
     // Labels are supplied by the server (M8 evidence view model) so that the
-    // console and the generated reports always agree on wording.
+    // console and the generated reports always agree on wording. These two mirror
+    // m8_ui_devops/evidence.py for the pre-load state: an absent engine field means
+    // "not assessed", never "assessed, nothing found".
+    const YARA_NOT_ASSESSED = "Not assessed: no YARA ruleset is loaded in M2.";
+    const YARA_NO_HITS = "The ruleset ran and no rule matched.";
+    const INTEL_NOT_ASSESSED = "Not queried: no threat-intelligence provider is configured.";
+    const INTEL_NO_HITS = "Providers were queried and returned no hit.";
     const EMPTY = {
       static_evidence: {
         label: "Static evidence", entropy: null, packers: [], strings: {}, pe: {},
-        yara_matches: [], embedded_urls: [], sample: {},
+        yara_matches: null, yara_detail: YARA_NOT_ASSESSED,
+        embedded_urls: [], sample: {},
       },
-      capabilities: { label: "Static capability indicators", techniques: [], detections: [], intel_hits: [] },
+      capabilities: {
+        label: "Static capability indicators", techniques: [], detections: [],
+        intel_hits: null, intel_detail: INTEL_NOT_ASSESSED,
+      },
       sandbox: { status: "unknown", label: "Sandbox not run", observed: false, detail: "", error: null, telemetry: null },
       iocs: { label: "Defanged indicators", items: [], beacons: [] },
       verdict: {}, score: {}, response_actions: [], pipeline: { status: "unknown", stages: {} },
@@ -552,7 +562,8 @@
                             <div className="text-[11px] uppercase text-slate-500 font-bold pt-2">YARA Matches</div>
                             <div className="p-2 bg-[#080c14] rounded border border-[#1c2636] text-amber-300">
                               {(staticEvidence.yara_matches || []).map((y, i) => <div key={i}>{y.rule}</div>)}
-                              {!(staticEvidence.yara_matches || []).length && <div className="text-slate-500">No rule hits.</div>}
+                              {staticEvidence.yara_matches != null && !staticEvidence.yara_matches.length && <div className="text-slate-500">{staticEvidence.yara_detail || YARA_NO_HITS}</div>}
+                              {staticEvidence.yara_matches == null && <div className="text-slate-500">{staticEvidence.yara_detail || YARA_NOT_ASSESSED}</div>}
                             </div>
                           </div>
                         </div>
@@ -755,11 +766,13 @@
                         </table>
                         <div className="text-[11px] uppercase text-slate-500 font-bold pt-2">Threat Intelligence Hits</div>
                         <div className="p-2 bg-[#080c14] rounded border border-[#1c2636] text-xs font-mono text-slate-400">
-                          {(capabilities.intel_hits || []).length
-                            ? (capabilities.intel_hits || []).map((h, i) => (
-                                <div key={i}>{h.provider}: {h.indicator} ({h.result})</div>
-                              ))
-                            : "No threat-intelligence lookup was performed or no hit was returned."}
+                          {capabilities.intel_hits == null
+                            ? (capabilities.intel_detail || INTEL_NOT_ASSESSED)
+                            : (capabilities.intel_hits.length
+                              ? capabilities.intel_hits.map((h, i) => (
+                                  <div key={i}>{h.provider}: {h.indicator} ({h.result})</div>
+                                ))
+                              : (capabilities.intel_detail || INTEL_NO_HITS))}
                         </div>
                       </Panel>
                     </div>

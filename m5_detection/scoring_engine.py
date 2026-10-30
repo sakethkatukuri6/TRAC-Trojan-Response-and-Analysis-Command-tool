@@ -10,7 +10,88 @@ Conforms strictly to `detections`, `score`, and `verdict` in `analysis_result.sc
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
+
+# Threat-score model. A factor contributes a fixed number of points when its
+# evidence is present. The contract's `weight` is that factor's ceiling share of
+# the 100-point score (max points / 100), so the weights reported are the numbers
+# the score is built from. Ceilings overlap deliberately: several factors can fire
+# on one sample, and `allocate_components` shares the 100-point budget between them.
+FACTOR_MAX_POINTS = {
+    "entropy_heuristics": 18.0,
+    "process_injection": 20.0,
+    "c2_network_activity": 18.0,
+    "persistence_routines": 12.0,
+    "evasion_techniques": 10.0,
+    "surveillance_modules": 10.0,
+    "signature_match": 88.0,
+}
+
+# Elevated-but-not-extreme entropy is half as alarming as a packed payload.
+ENTROPY_ELEVATED_POINTS = 10.0
+
+# Verdict bands are set by the contract's semantic gate (`malicious` needs score
+# >= 60, `benign` needs score <= 30), so the suspicious band starts where the
+# contract's benign ceiling ends. A wider gap would label a 31-point sample benign
+# and the validator would reject the document.
+MALICIOUS_MIN_SCORE = 60.0
+CRITICAL_MIN_SCORE = 80.0
+BENIGN_MAX_SCORE = 30.0
+
+
+def allocate_components(points: Dict[str, float]) -> Tuple[float, List[Dict[str, Any]]]:
+    """Turn the points claimed by fired factors into the score and its components.
+
+    The contract requires the components to sum to the published value, so a sample
+    whose factors together claim more than 100 points shares the budget out
+    proportionally. Clamping only the total would leave components reporting 176
+    against a value of 100, which the validator rejects.
+    """
+    raw_total = sum(points.values())
+    score_val = round(min(raw_total, 100.0), 1)
+    share = 100.0 / raw_total if raw_total > 100.0 else 1.0
+
+    components = [
+        {"name": name, "weight": FACTOR_MAX_POINTS[name] / 100.0, "contribution": round(pts * share, 1)}
+        for name, pts in points.items()
+    ]
+
+    # Keep the rounded components summing exactly to the published value.
+    drift = round(score_val - sum(c["contribution"] for c in components), 1)
+    if drift:
+        largest = max(components, key=lambda c: c["contribution"])
+        largest["contribution"] = round(largest["contribution"] + drift, 1)
+
+    return score_val, components
+
+
+def derive_confidence(
+    label: str,
+    *,
+    signature_hit: bool,
+    av_ran: bool,
+    yara_ran: bool,
+    runtime_observed: bool,
+) -> float:
+    """State how much of the evidence base can actually support this verdict.
+
+    A score band on its own says nothing about certainty: the same 62 points earned
+    from four corroborating engines is stronger evidence than 62 points from static
+    heuristics alone, and a "benign" answer is only worth as much as the scanners
+    that ran to rule things out.
+    """
+    if label == "benign":
+        # Nothing negative can be certified by engines that did not run.
+        return 0.6 if (av_ran and yara_ran) else 0.3
+
+    if signature_hit:
+        # A signature engine named the threat; heuristics only corroborate it.
+        return 0.95
+    if runtime_observed or yara_ran:
+        # An independent engine or live telemetry backs the heuristics.
+        return 0.8
+    # Static heuristics are the only source.
+    return 0.6
 
 
 def score_analysis(
@@ -32,7 +113,7 @@ def score_analysis(
 
     entropy_contrib = 0.0
     if entropy >= 7.2:
-        entropy_contrib = 18.0
+        entropy_contrib = FACTOR_MAX_POINTS["entropy_heuristics"]
         detection_items.append({
             "rule_id": "HEUR_HIGH_ENTROPY_PACKED",
             "kind": "behavior",
@@ -45,7 +126,7 @@ def score_analysis(
         behavior_tags.add("obfuscated")
         explanations.append(f"High entropy ({entropy:.2f}) indicates an encrypted/packed executable payload.")
     elif entropy >= 6.5:
-        entropy_contrib = 10.0
+        entropy_contrib = ENTROPY_ELEVATED_POINTS
         explanations.append(f"Elevated section entropy ({entropy:.2f}) indicates compressed resources.")
 
     if packers:
@@ -64,7 +145,7 @@ def score_analysis(
 
     injection_contrib = 0.0
     if "injection" in behaviors:
-        injection_contrib = 20.0
+        injection_contrib = FACTOR_MAX_POINTS["process_injection"]
         detection_items.append({
             "rule_id": "IMPORT_PROCESS_INJECTION",
             "kind": "behavior",
@@ -78,7 +159,7 @@ def score_analysis(
 
     c2_contrib = 0.0
     if "c2_networking" in behaviors:
-        c2_contrib = 18.0
+        c2_contrib = FACTOR_MAX_POINTS["c2_network_activity"]
         detection_items.append({
             "rule_id": "NETWORK_C2_COMMUNICATION",
             "kind": "behavior",
@@ -92,7 +173,7 @@ def score_analysis(
 
     persistence_contrib = 0.0
     if "persistence" in behaviors:
-        persistence_contrib = 12.0
+        persistence_contrib = FACTOR_MAX_POINTS["persistence_routines"]
         detection_items.append({
             "rule_id": "PERSISTENCE_RUNKEY",
             "kind": "behavior",
@@ -106,7 +187,7 @@ def score_analysis(
 
     evasion_contrib = 0.0
     if "evasion" in behaviors:
-        evasion_contrib = 10.0
+        evasion_contrib = FACTOR_MAX_POINTS["evasion_techniques"]
         detection_items.append({
             "rule_id": "DEFENSE_EVASION_ANTIDEBUG",
             "kind": "behavior",
@@ -120,7 +201,7 @@ def score_analysis(
 
     keylogger_contrib = 0.0
     if "keylogging" in behaviors:
-        keylogger_contrib = 10.0
+        keylogger_contrib = FACTOR_MAX_POINTS["surveillance_modules"]
         detection_items.append({
             "rule_id": "SURVEILLANCE_KEYLOGGING",
             "kind": "behavior",
@@ -160,51 +241,62 @@ def score_analysis(
             "tags": ["signature_match"],
         })
         explanations.append("First-pass signature engine flagged known malicious signature.")
-        signature_contrib = 88.0
+        signature_contrib = FACTOR_MAX_POINTS["signature_match"]
 
-    # Sum contributions up to 100
-    raw_total = (
-        entropy_contrib
-        + injection_contrib
-        + c2_contrib
-        + persistence_contrib
-        + evasion_contrib
-        + keylogger_contrib
-        + signature_contrib
-    )
-
-    # Component weights and values
-    score_val = round(min(max(raw_total, 0.0), 100.0), 1)
-
-    # Guarantee components strictly sum to score_val
-    components = [
-        {"name": "entropy_heuristics", "weight": 0.20, "contribution": round(entropy_contrib, 1)},
-        {"name": "process_injection",  "weight": 0.25, "contribution": round(injection_contrib, 1)},
-        {"name": "c2_network_activity", "weight": 0.20, "contribution": round(c2_contrib, 1)},
-        {"name": "persistence_routines", "weight": 0.15, "contribution": round(persistence_contrib, 1)},
-        {"name": "evasion_techniques", "weight": 0.10, "contribution": round(evasion_contrib, 1)},
-        {"name": "surveillance_modules", "weight": 0.10, "contribution": round(keylogger_contrib, 1)},
-        {"name": "signature_match", "weight": 1.00, "contribution": round(signature_contrib, 1)},
-    ]
-
-    # Components are the score: there is no hidden baseline or fabricated term.
+    factor_points = {
+        "entropy_heuristics": entropy_contrib,
+        "process_injection": injection_contrib,
+        "c2_network_activity": c2_contrib,
+        "persistence_routines": persistence_contrib,
+        "evasion_techniques": evasion_contrib,
+        "surveillance_modules": keylogger_contrib,
+        "signature_match": signature_contrib,
+    }
+    score_val, components = allocate_components(factor_points)
 
     # Verdict derivation
-    if score_val >= 60.0:
+    if score_val >= MALICIOUS_MIN_SCORE:
         verdict_label = "malicious"
-        verdict_severity = "critical" if score_val >= 80.0 else "high"
-        confidence = 0.8
-    elif score_val >= 35.0:
+        verdict_severity = "critical" if score_val >= CRITICAL_MIN_SCORE else "high"
+    elif score_val > BENIGN_MAX_SCORE:
         verdict_label = "suspicious"
         verdict_severity = "medium"
-        confidence = 0.65
     else:
         verdict_label = "benign"
         verdict_severity = "low"
-        confidence = 0.6
 
     if not explanations:
         explanations.append("File analyzed without actionable malicious indicators.")
+
+    av_ran = clamav in ("clean", "detected")
+    yara_ran = "yara_matches" in static_result
+    runtime_observed = dynamic_result.get("status") == "done"
+    confidence = derive_confidence(
+        verdict_label,
+        signature_hit=signature_contrib > 0.0,
+        av_ran=av_ran,
+        yara_ran=yara_ran,
+        runtime_observed=runtime_observed,
+    )
+    ran_sources = [
+        name
+        for name, ran in (
+            ("ClamAV", av_ran),
+            ("YARA rules", yara_ran),
+            ("sandbox telemetry", runtime_observed),
+            ("signature match", signature_contrib > 0.0),
+        )
+        if ran
+    ]
+    if ran_sources:
+        explanations.append(
+            f"Confidence {confidence:.2f}: corroborated by {' and '.join(ran_sources)}."
+        )
+    else:
+        explanations.append(
+            f"Confidence {confidence:.2f}: no corroborating engine ran, "
+            "so this rests on static heuristics alone."
+        )
 
     clean_tags = [re.sub(r"[^a-z0-9_]", "_", t.lower()) for t in sorted(behavior_tags) if t]
 
@@ -212,7 +304,9 @@ def score_analysis(
         "detections": {
             "status": "done",
             "items": detection_items,
-            "intel_hits": [],
+            # `intel_hits` is omitted rather than left empty: no reputation provider is
+            # queried by this pipeline, so an empty list would claim a check that
+            # returned nothing. A provider integration adds the key with real entries.
         },
         "score": {
             "value": score_val,

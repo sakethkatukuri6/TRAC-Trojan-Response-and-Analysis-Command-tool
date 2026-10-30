@@ -189,7 +189,8 @@ def _extract_strings_section(data: bytes) -> dict:
     return {
         "count": total_count,
         "interesting": interesting,
-        "deobfuscated_count": 0,
+        # `deobfuscated_count` is omitted, not zero: no deobfuscation pass runs here, so
+        # 0 would report "decoded some strings and none were interesting".
     }
 
 
@@ -439,8 +440,9 @@ def analyze_static(data: bytes, file_type: str, filename: str = "") -> dict:
         "entropy": entropy,
         "strings": strings_section,
         "embedded_urls": embedded_urls,
-        "yara_matches": [],
-        "macros": [],
+        # `yara_matches` and `macros` are omitted while no YARA ruleset and no macro
+        # parser exist in this module. Emitting [] would claim "evaluated, nothing
+        # matched"; consumers treat a missing key as not assessed.
     }
 
     # -- PE-specific analysis --

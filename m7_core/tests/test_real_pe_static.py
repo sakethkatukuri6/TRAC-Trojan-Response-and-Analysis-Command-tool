@@ -52,6 +52,12 @@ def test_m2_parses_real_sections_and_imports(benign_pe):
     assert result["pe"]["compile_time"].startswith("2020-07-17T04:10:27")
     assert result["packers"] == []
     assert result["strings"]["count"] > 0
+    # M2 loads no YARA ruleset, no macro parser and no deobfuscator, so it reports
+    # those engines as not run by omitting the keys instead of publishing an empty
+    # result set that reads as "checked, nothing found".
+    assert "yara_matches" not in result
+    assert "macros" not in result
+    assert "deobfuscated_count" not in result["strings"]
 
 
 def test_m2_reports_failure_instead_of_inventing_pe_metadata(benign_pe):
@@ -78,6 +84,7 @@ def test_pipeline_analyses_a_real_pe_end_to_end(benign_pe, isolated_vault):
     assert len(document["static"]["pe"]["sections"]) == 2
     assert len(document["static"]["pe"]["imports"]) == 3
     assert document["static"]["pe"]["imphash"] == FIXTURE_IMPHASH
+    assert "intel_hits" not in document["detections"]
 
 
 def test_real_pe_without_a_sandbox_claims_no_runtime_evidence(benign_pe, isolated_vault):

@@ -22,7 +22,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from m8_ui_devops.evidence import build_presentation
+from m8_ui_devops.evidence import YARA_NO_HITS, YARA_NOT_ASSESSED, build_presentation
 from m8_ui_devops.reporting.models import ReportData
 
 
@@ -366,7 +366,10 @@ class PDFReportGenerator:
         ]
         entropy_str = f"{self.data.entropy:.2f} / 8.00" if self.data.entropy is not None else "N/A"
         packers_str = ", ".join(self.data.packers) if self.data.packers else "None Detected"
-        yara_str = ", ".join([y.get("rule", "") for y in self.data.yara_matches]) or "No rule hits"
+        if self.data.yara_matches is None:
+            yara_str = YARA_NOT_ASSESSED
+        else:
+            yara_str = ", ".join([y.get("rule", "") for y in self.data.yara_matches]) or YARA_NO_HITS
         urls_joined = ", ".join(self.data.embedded_urls) or "None"
         entropy_tag = '<font color="red"><b>[HIGH - Suspicious Packing]</b></font>' if (self.data.entropy or 0) > 7.0 else '[Normal]'
         imphash_str = html.escape(self.data.imphash) or "Not recovered"

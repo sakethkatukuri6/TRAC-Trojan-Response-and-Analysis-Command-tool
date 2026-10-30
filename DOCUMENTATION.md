@@ -27,7 +27,7 @@ flowchart TD
     M1 -- "sample.received" --> M2["M2: Static Analysis\n(PE Headers, Entropy, Imports)"]
     M2 -- "static.done" --> M3["M3: Dynamic Analysis\n(Isolated Sandbox Execution)"]
     M3 -- "dynamic.done" --> M4["M4: IOC Extraction\n(Network & Host Indicators)"]
-    M4 -- "iocs.done" --> M5["M5: Detection & Scoring\n(YARA, Sigma, Verdict)"]
+    M4 -- "iocs.done" --> M5["M5: Detection & Scoring\n(Weighted Rules, Verdict)"]
     M5 -- "scoring.done" --> M6["M6: Response Engine\n(Containment Plan & Audit Chain)"]
     M6 -- "response.done" --> M8["M8: UI & DevOps\n(Forensic Report & Dashboard)"]
     
@@ -53,10 +53,10 @@ The platform pipeline enforces strict section ownership. Only the designated mod
 | Stage / Module | Section Owned | Event Emitted | Consumer | Allowed Actions |
 |---|---|---|---|---|
 | **M1: Ingestion** | `sample` | `sample.received` | M2 | Defang, encrypt, hash (SHA-256/MD5), initial AV signature check |
-| **M2: Static** | `static` | `static.done` | M3 | Header inspection, section entropy, string extraction, import analysis |
+| **M2: Static** | `static` | `static.done` | M3 | Header inspection, section entropy, string extraction, import analysis (no YARA ruleset or macro parser: those keys are omitted, not empty) |
 | **M3: Dynamic** | `dynamic` | `dynamic.done` | M4 | Sandbox detonation, API call interception, snapshot revert |
 | **M4: IOCs** | `iocs` | `iocs.done` | M5 | Normalize indicators, defang URLs/domains/IPs, map ATT&CK IDs |
-| **M5: Detection** | `detections`, `score`, `verdict` | `scoring.done` | M6 | Calculate weighted score (0–100), classify verdict, YARA matches |
+| **M5: Detection** | `detections`, `score`, `verdict` | `scoring.done` | M6 | Calculate weighted score (0–100), classify verdict from the factors that fired |
 | **M6: Response** | `response_actions` | `response.done` | M8 | Plan containment, enforce dual-control approval gate, STIX export |
 | **M7: Orchestrator** | `pipeline` | `done` / `stage.failed` | All | State transition validation, RBAC authentication, persistence |
 | **M8: UI & Reporting** | *Read-only Consumer* | `report.done` | M7 | PDF/HTML forensic report export, SOC interactive dashboard |
@@ -123,11 +123,21 @@ received ➔ static ➔ dynamic ➔ iocs ➔ scoring ➔ response ➔ report ➔
 ### Module 5: Detection & Scoring (`m5_detection`)
 - **Purpose:** Computes weighted threat scores and establishes the final threat verdict.
 - **Key Capabilities:**
-  - **Ensemble Scoring:** Aggregates findings from static entropy, heuristic behaviors, and YARA rules.
-  - **Verdict Bands:**
-    - `malicious`: Threat Score $\ge 60$ (Confidence $\ge 0.85$)
-    - `suspicious`: Threat Score between $31$ and $59$
+  - **Weighted Rule Scoring:** Adds the points of the factors whose evidence is present —
+    entropy/packing, process-injection, C2-networking, persistence, evasion, keylogging
+    and first-pass signature match. Each factor's published `weight` is its ceiling share
+    of the 100-point scale, and a sample whose factors claim more than 100 points has its
+    budget shared proportionally so the components always sum to the score.
+  - **Not implemented:** no YARA/Sigma ruleset and no threat-intelligence provider is
+    consulted. M5 omits `detections.intel_hits` instead of publishing an empty list.
+  - **Verdict Bands** (fixed by the contract's semantic gate):
+    - `malicious`: Threat Score $\ge 60$ (severity `critical` at $\ge 80$)
+    - `suspicious`: Threat Score $> 30$ and $< 60$
     - `benign`: Threat Score $\le 30$
+  - **Confidence** is derived from the evidence base, not the band: 0.95 for a signature
+    match, 0.8 when an independent engine or sandbox telemetry corroborates the
+    heuristics, 0.6 for static heuristics alone, and 0.3 for a `benign` verdict when
+    neither ClamAV nor a YARA ruleset ran.
   - Component contribution validation (sum of weighted components must match total score $\pm 1$).
 - **CLI Command:**
   ```cmd

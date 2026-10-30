@@ -40,7 +40,7 @@ class ReportData:
     file_class: str
     entropy: Optional[float]
     packers: List[str]
-    yara_matches: List[Dict[str, Any]]
+    yara_matches: Optional[List[Dict[str, Any]]]
     imports: List[str]
     imphash: str
     sections: List[Dict[str, Any]]
@@ -65,7 +65,7 @@ class ReportData:
     
     # Detections
     detection_items: List[Dict[str, Any]]
-    intel_hits: List[Dict[str, Any]]
+    intel_hits: Optional[List[Dict[str, Any]]]
     
     # Response actions
     response_actions: List[Dict[str, Any]]
@@ -114,7 +114,7 @@ class ReportData:
             file_class=static.get("file_class", "unknown"),
             entropy=static.get("entropy"),
             packers=static.get("packers", []),
-            yara_matches=static.get("yara_matches", []),
+            yara_matches=static.get("yara_matches"),
             imports=pe.get("imports", []),
             imphash=pe.get("imphash", ""),
             sections=pe.get("sections", []),
@@ -136,7 +136,8 @@ class ReportData:
             beacons=iocs_sec.get("beacons", []),
             
             detection_items=detections.get("items", []),
-            intel_hits=detections.get("intel_hits", []),
+            # None means the engine never ran; [] means it ran and found nothing.
+            intel_hits=detections.get("intel_hits"),
             
             response_actions=doc.get("response_actions", []),
             pipeline_status=pipeline.get("status", "unknown"),

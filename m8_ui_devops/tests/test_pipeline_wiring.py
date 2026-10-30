@@ -21,10 +21,14 @@ from m7_core.database import get_db, init_db
 from m7_core.services import pipeline_runner
 from m8_ui_devops.cli import create_dashboard_app
 from m8_ui_devops.evidence import (
+    INTEL_NOT_ASSESSED,
+    INTEL_NO_HITS,
     OBSERVED_SANDBOX_LABEL,
     SANDBOX_FAILED_LABEL,
     SANDBOX_NOT_CONFIGURED_LABEL,
     STATIC_EVIDENCE_LABEL,
+    YARA_NOT_ASSESSED,
+    YARA_NO_HITS,
     build_presentation,
 )
 
@@ -103,6 +107,49 @@ class EvidenceLabelTests(unittest.TestCase):
         self.assertEqual(view["capabilities"]["techniques"], [{"id": "T1055"}])
 
 
+class EngineCoverageTests(unittest.TestCase):
+    """An engine that never ran must not be presented as having found nothing."""
+
+    def test_absent_yara_field_is_reported_as_not_assessed(self):
+        view = build_presentation({"static": {"status": "done", "file_class": "pe"}})
+
+        self.assertIsNone(view["static_evidence"]["yara_matches"])
+        self.assertEqual(view["static_evidence"]["yara_detail"], YARA_NOT_ASSESSED)
+
+    def test_yara_run_with_no_hit_is_reported_as_an_empty_result(self):
+        view = build_presentation({"static": {"status": "done", "yara_matches": []}})
+
+        self.assertEqual(view["static_evidence"]["yara_matches"], [])
+        self.assertEqual(view["static_evidence"]["yara_detail"], YARA_NO_HITS)
+
+    def test_yara_hits_are_passed_through(self):
+        view = build_presentation({"static": {"yara_matches": [{"rule": "Win32_Trojan_X"}]}})
+
+        self.assertEqual(view["static_evidence"]["yara_matches"], [{"rule": "Win32_Trojan_X"}])
+        self.assertEqual(view["static_evidence"]["yara_detail"], "")
+
+    def test_absent_intel_field_is_reported_as_not_queried(self):
+        view = build_presentation({"detections": {"status": "done", "items": []}})
+
+        self.assertIsNone(view["capabilities"]["intel_hits"])
+        self.assertEqual(view["capabilities"]["intel_detail"], INTEL_NOT_ASSESSED)
+
+    def test_intel_queried_with_no_hit_is_reported_as_an_empty_result(self):
+        view = build_presentation({"detections": {"status": "done", "intel_hits": []}})
+
+        self.assertEqual(view["capabilities"]["intel_hits"], [])
+        self.assertEqual(view["capabilities"]["intel_detail"], INTEL_NO_HITS)
+
+    def test_pdf_report_distinguishes_not_assessed_from_no_hits(self):
+        from m8_ui_devops.reporting.models import ReportData
+
+        not_assessed = ReportData.from_doc({"static": {"status": "done"}})
+        ran = ReportData.from_doc({"static": {"status": "done", "yara_matches": []}})
+
+        self.assertIsNone(not_assessed.yara_matches)
+        self.assertEqual(ran.yara_matches, [])
+
+
 class DashboardContentTests(unittest.TestCase):
     """The served console must not carry hardcoded sample data."""
 
@@ -121,6 +168,12 @@ class DashboardContentTests(unittest.TestCase):
         # The sandbox tab title must be driven by the server supplied label.
         self.assertIn("sandbox.label", self.html)
         self.assertNotIn(">Observed sandbox telemetry<", self.html)
+
+    def test_engines_that_never_ran_are_not_labelled_as_empty_results(self):
+        self.assertIn("yara_detail", self.html)
+        self.assertIn("intel_detail", self.html)
+        self.assertNotIn("No rule hits.", self.html)
+        self.assertNotIn("No threat-intelligence lookup was performed", self.html)
 
 
 class UploadRouteTests(unittest.TestCase):
