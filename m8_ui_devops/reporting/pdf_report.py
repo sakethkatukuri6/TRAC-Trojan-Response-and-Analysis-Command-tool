@@ -369,10 +369,14 @@ class PDFReportGenerator:
         yara_str = ", ".join([y.get("rule", "") for y in self.data.yara_matches]) or "No rule hits"
         urls_joined = ", ".join(self.data.embedded_urls) or "None"
         entropy_tag = '<font color="red"><b>[HIGH - Suspicious Packing]</b></font>' if (self.data.entropy or 0) > 7.0 else '[Normal]'
+        imphash_str = html.escape(self.data.imphash) or "Not recovered"
+        imports_str = ", ".join(html.escape(name) for name in self.data.imports[:40]) or "None recovered"
 
         info_p = Paragraph(
             f"<b>Entropy:</b> {entropy_str} {entropy_tag} | "
             f"<b>Packers:</b> {packers_str}<br/>"
+            f"<b>Imphash:</b> {imphash_str}<br/>"
+            f"<b>Imported functions ({len(self.data.imports)}):</b> {imports_str}<br/>"
             f"<b>YARA Detections:</b> {yara_str}<br/>"
             f"<b>Embedded URLs (Defanged):</b> {urls_joined}",
             self.body_style

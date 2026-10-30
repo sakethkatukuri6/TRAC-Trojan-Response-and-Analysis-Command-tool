@@ -12,7 +12,8 @@ from __future__ import annotations
 import io
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from pathlib import PurePosixPath
+from typing import Any, Dict, List, Optional, Tuple
 import uuid
 import zipfile
 
@@ -21,7 +22,7 @@ try:
 except ImportError:
     pyzipper = None
 
-from m1_ingestion.vault import SampleVault
+from m1_ingestion.vault import MAX_FILE_SIZE, SampleVault
 from m2_static.analyzer import analyze_static
 from m3_dynamic.inference_engine import infer_behavior
 from m4_ioc.extractor import extract_iocs
@@ -30,60 +31,140 @@ from m6_response.planner.response_planner import ResponsePlanner
 
 logger = logging.getLogger(__name__)
 
+# Member extensions that identify the executable payload inside a sample archive.
+EXECUTABLE_SUFFIXES = frozenset({
+    ".exe", ".dll", ".sys", ".scr", ".pif", ".com", ".ocx", ".cpl", ".drv", ".efi", ".msi",
+})
+
+
+class ArchiveRejected(ValueError):
+    """An uploaded archive could not be reduced to exactly one safe payload."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.message = message
+
+
+def _is_unsafe_member_name(name: str) -> bool:
+    """True when an archive member is not a plain relative path."""
+    if "\x00" in name or ":" in name:
+        return True
+    path = PurePosixPath(name.replace("\\", "/"))
+    return path.is_absolute() or ".." in path.parts
+
+
+def _member_suffix(name: str) -> str:
+    return PurePosixPath(name.replace("\\", "/")).suffix.lower()
+
+
+def _member_basename(name: str) -> str:
+    return PurePosixPath(name.replace("\\", "/")).name
+
+
+def _open_archive(raw_data: bytes) -> Tuple[Any, io.BytesIO]:
+    """Open the uploaded archive from memory only."""
+    buffer = io.BytesIO(raw_data)
+    if pyzipper is not None:
+        try:
+            return pyzipper.AESZipFile(buffer), buffer
+        except Exception:
+            buffer.seek(0)
+    try:
+        return zipfile.ZipFile(buffer), buffer
+    except Exception as exc:
+        buffer.close()
+        raise ArchiveRejected("ARCHIVE_UNSUPPORTED", f"Archive could not be read: {exc}") from exc
+
+
+def _select_payload(members: List[zipfile.ZipInfo], filename: str) -> zipfile.ZipInfo:
+    """Pick the single payload to analyse, refusing ambiguous archives."""
+    candidates = [m for m in members if _member_suffix(m.filename) in EXECUTABLE_SUFFIXES]
+    if len(candidates) > 1:
+        names = ", ".join(sorted(_member_basename(m.filename) for m in candidates[:5]))
+        raise ArchiveRejected(
+            "ARCHIVE_AMBIGUOUS",
+            f"{filename} contains {len(candidates)} executable candidates ({names}); "
+            "exactly one payload is analysed per submission.",
+        )
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(members) == 1:
+        return members[0]
+    raise ArchiveRejected(
+        "ARCHIVE_UNSUPPORTED",
+        f"{filename} contains {len(members)} files and no single executable payload.",
+    )
+
+
+def _read_member(archive: Any, member: zipfile.ZipInfo, password: Optional[str]) -> bytes:
+    pwd = password.encode("utf-8") if password else None
+    last_error: Optional[BaseException] = None
+    for attempt in (pwd, None):
+        try:
+            return archive.read(member) if attempt is None else archive.read(member, pwd=attempt)
+        except Exception as exc:
+            last_error = exc
+    # The message never echoes the supplied password.
+    raise ArchiveRejected(
+        "ARCHIVE_UNREADABLE",
+        f"{_member_basename(member.filename)} could not be extracted: {last_error}",
+    )
+
 
 def unpack_if_archive(
     raw_data: bytes,
     filename: str,
     password: Optional[str] = "infected",
 ) -> Tuple[bytes, str]:
-    """Auto-extract executable payload if raw_data is a password-protected or standard ZIP."""
+    """Reduce a ZIP upload to its single payload, entirely in memory.
+
+    Raises ``ArchiveRejected`` for archives with no file entry, an unsafe member
+    name, several executable candidates, an undecryptable payload, or a payload
+    that exceeds the contract size cap once decompressed.
+    """
     if not (raw_data.startswith(b"PK\x03\x04") or raw_data.startswith(b"PK\x05\x06")):
         return raw_data, filename
 
-    pwd_bytes = password.encode("utf-8") if password else b"infected"
-
-    # Attempt pyzipper first for WinZip AES support
-    if pyzipper is not None:
-        try:
-            with pyzipper.AESZipFile(io.BytesIO(raw_data)) as zf:
-                names = zf.namelist()
-                for name in names:
-                    if not name.endswith("/"):
-                        try:
-                            extracted = zf.read(name, pwd=pwd_bytes)
-                            if len(extracted) > 0:
-                                return extracted, name
-                        except Exception:
-                            # Try without password
-                            try:
-                                extracted = zf.read(name)
-                                if len(extracted) > 0:
-                                    return extracted, name
-                            except Exception:
-                                pass
-        except Exception:
-            pass
-
-    # Standard zipfile fallback
+    archive, buffer = _open_archive(raw_data)
     try:
-        with zipfile.ZipFile(io.BytesIO(raw_data)) as zf:
-            for name in zf.namelist():
-                if not name.endswith("/"):
-                    try:
-                        extracted = zf.read(name, pwd=pwd_bytes)
-                        if len(extracted) > 0:
-                            return extracted, name
-                    except Exception:
-                        try:
-                            extracted = zf.read(name)
-                            if len(extracted) > 0:
-                                return extracted, name
-                        except Exception:
-                            pass
-    except Exception:
-        pass
+        members = [info for info in archive.infolist() if not info.is_dir()]
+        if not members:
+            raise ArchiveRejected("ARCHIVE_EMPTY", f"{filename} contains no file entry.")
 
-    return raw_data, filename
+        for member in members:
+            if _is_unsafe_member_name(member.filename):
+                raise ArchiveRejected(
+                    "ARCHIVE_UNSAFE_NAME",
+                    f"Archive member {member.filename!r} is not a safe relative path.",
+                )
+
+        chosen = _select_payload(members, filename)
+        # Checked before decompression so a declared size bomb is never inflated.
+        if chosen.file_size > MAX_FILE_SIZE:
+            raise ArchiveRejected(
+                "PAYLOAD_TOO_LARGE",
+                f"{_member_basename(chosen.filename)} decompresses to {chosen.file_size} "
+                f"bytes; the cap is {MAX_FILE_SIZE} bytes.",
+            )
+
+        payload = _read_member(archive, chosen, password)
+        if not payload:
+            raise ArchiveRejected(
+                "ARCHIVE_EMPTY",
+                f"{_member_basename(chosen.filename)} is empty.",
+            )
+        if len(payload) > MAX_FILE_SIZE:
+            raise ArchiveRejected(
+                "PAYLOAD_TOO_LARGE",
+                f"{_member_basename(chosen.filename)} decompressed to {len(payload)} bytes "
+                f"beyond the {MAX_FILE_SIZE} byte cap.",
+            )
+
+        return payload, _member_basename(chosen.filename)
+    finally:
+        archive.close()
+        buffer.close()
 
 
 def run_full_pipeline(

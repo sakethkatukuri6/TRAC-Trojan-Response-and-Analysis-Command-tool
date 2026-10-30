@@ -9,13 +9,16 @@ import io
 import os
 from pathlib import Path
 import tempfile
+from unittest import mock
 import unittest
+import zipfile
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from m7_core.database import Base, get_db
+from m7_core.database import get_db, init_db
+from m7_core.services import pipeline_runner
 from m8_ui_devops.cli import create_dashboard_app
 from m8_ui_devops.evidence import (
     OBSERVED_SANDBOX_LABEL,
@@ -136,7 +139,7 @@ class UploadRouteTests(unittest.TestCase):
             f"sqlite:///{(tmp / 'm8_test.db').as_posix()}",
             connect_args={"check_same_thread": False},
         )
-        Base.metadata.create_all(bind=self.engine)
+        init_db(self.engine)
         self.addCleanup(self.engine.dispose)
         self.session_factory = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
 
@@ -274,6 +277,63 @@ class UploadRouteTests(unittest.TestCase):
             document["sample"]["sha256"], hashlib.sha256(EICAR).hexdigest()
         )
 
+    def test_a_real_pe_shows_parsed_sections_and_imports(self):
+        from m7_core.tests.benign_pe import build_benign_pe, expected_imports
+
+        res = self._upload("pe_fixture.exe", build_benign_pe(), "application/octet-stream")
+        self.assertEqual(res.status_code, 200, res.text)
+        payload = res.json()
+        evidence = payload["presentation"]["static_evidence"]
+        sandbox = payload["presentation"]["sandbox"]
+
+        self.assertEqual(payload["document"]["sample"]["file_type"], "pe")
+        self.assertEqual(evidence["file_class"], "pe")
+        self.assertEqual([s["name"] for s in evidence["pe"]["sections"]], [".text", ".rdata"])
+        self.assertEqual(sorted(evidence["pe"]["imports"]), sorted(expected_imports()))
+        self.assertEqual(len(evidence["pe"]["imphash"]), 32)
+        self.assertFalse(sandbox["observed"])
+        self.assertIsNone(sandbox["telemetry"])
+        self.assertNotEqual(sandbox["label"], OBSERVED_SANDBOX_LABEL)
+
+    @staticmethod
+    def _zip(entries):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as zf:
+            for name, data in entries.items():
+                zf.writestr(name, data)
+        return buffer.getvalue()
+
+    def _upload(self, filename, payload, content_type="application/zip"):
+        return self.client.post(
+            "/api/samples/upload",
+            files={"file": (filename, payload, content_type)},
+        )
+
+    def test_unsafe_member_name_is_rejected_without_analysis(self):
+        res = self._upload("sample.zip", self._zip({"../evil.exe": EICAR}))
+        self.assertEqual(res.status_code, 400, res.text)
+        self.assertIn("ARCHIVE_UNSAFE_NAME", res.json()["detail"])
+        self.assertEqual(self.client.get("/api/analyses").json(), [])
+
+    def test_ambiguous_executable_candidates_are_rejected(self):
+        res = self._upload("sample.zip", self._zip({"drop.exe": EICAR, "helper.dll": EICAR}))
+        self.assertEqual(res.status_code, 400, res.text)
+        self.assertIn("ARCHIVE_AMBIGUOUS", res.json()["detail"])
+
+    def test_empty_archive_is_rejected(self):
+        buffer = io.BytesIO()
+        zipfile.ZipFile(buffer, "w").close()
+        res = self._upload("sample.zip", buffer.getvalue())
+        self.assertEqual(res.status_code, 400, res.text)
+        self.assertIn("ARCHIVE_EMPTY", res.json()["detail"])
+
+    def test_extracted_payload_over_the_cap_is_rejected_with_413(self):
+        archive = self._zip({"payload.exe": b"x" * 4096})
+        with mock.patch.object(pipeline_runner, "MAX_FILE_SIZE", 16):
+            res = self._upload("sample.zip", archive)
+        self.assertEqual(res.status_code, 413, res.text)
+        self.assertIn("PAYLOAD_TOO_LARGE", res.json()["detail"])
+
     def test_empty_upload_is_rejected(self):
         res = self.client.post(
             "/api/samples/upload",
@@ -312,7 +372,7 @@ class SandboxFailurePathTests(unittest.TestCase):
             f"sqlite:///{(tmp / 'm8_fail.db').as_posix()}",
             connect_args={"check_same_thread": False},
         )
-        Base.metadata.create_all(bind=self.engine)
+        init_db(self.engine)
         self.addCleanup(self.engine.dispose)
         self.session_factory = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
 

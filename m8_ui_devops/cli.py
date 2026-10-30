@@ -55,7 +55,7 @@ def create_dashboard_app(host: str = "127.0.0.1", port: int = 8088):
 
     from m7_core.database import get_db
     from m7_core.services.analysis_service import AnalysisService
-    from m7_core.services.pipeline_runner import run_full_pipeline
+    from m7_core.services.pipeline_runner import ArchiveRejected, run_full_pipeline
     from m7_core.services.section_service import SectionStateConflictError
 
     app = FastAPI(title="TRAC Security Command Platform (M8)", version="1.0.0")
@@ -105,6 +105,9 @@ def create_dashboard_app(host: str = "127.0.0.1", port: int = 8088):
                 original_filename=file.filename or "sample.exe",
                 archive_password=archive_password,
             )
+        except ArchiveRejected as exc:
+            status_code = 413 if exc.code == "PAYLOAD_TOO_LARGE" else 400
+            raise HTTPException(status_code=status_code, detail=f"{exc.code}: {exc.message}")
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {exc}")
 

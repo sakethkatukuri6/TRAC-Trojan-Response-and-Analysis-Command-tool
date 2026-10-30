@@ -113,6 +113,41 @@ def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = N
             </div>
         """
 
+    # Static evidence recovered by M2 from the submitted binary.
+    entropy_str = f"{d.entropy:.2f} / 8.00" if d.entropy is not None else "N/A"
+    packers_str = ", ".join(d.packers) if d.packers else "None detected"
+    imphash_str = html.escape(d.imphash) if d.imphash else "Not recovered"
+    section_rows = ""
+    for sec in d.sections:
+        section_rows += f"""
+        <tr>
+            <td class="font-mono text-cyan">{html.escape(str(sec.get('name', 'N/A')))}</td>
+            <td class="text-right font-mono">{float(sec.get('entropy') or 0.0):.2f}</td>
+            <td class="text-right font-mono">{int(sec.get('raw_size') or 0):,}</td>
+        </tr>
+        """
+    import_items = "".join(f"<li>{html.escape(name)}</li>" for name in d.imports[:60])
+    static_block = f"""
+            <div class="grid-2">
+                <table class="table">
+                    <tr><td class="text-dim">File Class:</td><td class="font-bold">{html.escape(d.file_class.upper())}</td></tr>
+                    <tr><td class="text-dim">Entropy:</td><td class="font-mono">{entropy_str}</td></tr>
+                    <tr><td class="text-dim">Packers:</td><td>{html.escape(packers_str)}</td></tr>
+                    <tr><td class="text-dim">Imphash:</td><td class="font-mono text-dim">{imphash_str}</td></tr>
+                </table>
+                <table class="table">
+                    <thead><tr><th>PE Section</th><th class="text-right">Entropy</th><th class="text-right">Raw Size</th></tr></thead>
+                    <tbody>{section_rows or '<tr><td colspan="3" class="text-muted">No PE section table (file class is not PE).</td></tr>'}</tbody>
+                </table>
+            </div>
+            <div style="margin-top: 10px;">
+                <div class="text-dim" style="font-size: 11px; margin-bottom: 4px;">
+                    Imported functions ({len(d.imports)}) recovered from the import directory:
+                </div>
+                <ul class="font-mono" style="font-size: 11px; margin: 0; padding-left: 18px;">{import_items or '<li>No imports recovered.</li>'}</ul>
+            </div>
+    """
+
     # Actions rows
     act_rows = ""
     for act in d.response_actions:
@@ -415,9 +450,15 @@ def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = N
             </div>
         </div>
 
+        <!-- Static Analysis Evidence -->
+        <div class="card">
+            <div class="card-header">2. Static Analysis Evidence (Parsed By M2)</div>
+            {static_block}
+        </div>
+
         <!-- Threat Score Audit -->
         <div class="card">
-            <div class="card-header">2. Weighted Threat Score Decomposition</div>
+            <div class="card-header">3. Weighted Threat Score Decomposition</div>
             <table class="table">
                 <thead>
                     <tr><th>Component Model</th><th class="text-right">Weight</th><th class="text-right">Contribution</th></tr>
@@ -429,7 +470,7 @@ def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = N
         <!-- MITRE ATT&CK Matrix -->
         {f'''
         <div class="card">
-            <div class="card-header">3. MITRE ATT&CK Capability Mapping (Static Evidence)</div>
+            <div class="card-header">4. MITRE ATT&CK Capability Mapping (Static Evidence)</div>
             <table class="table">
                 <thead><tr><th>Technique ID</th><th>Tactic</th><th>Evidence</th></tr></thead>
                 <tbody>{attack_rows}</tbody>
@@ -439,7 +480,7 @@ def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = N
 
         <!-- Indicators of Compromise -->
         <div class="card">
-            <div class="card-header">4. Indicators of Compromise (Defanged)</div>
+            <div class="card-header">5. Indicators of Compromise (Defanged)</div>
             <table class="table">
                 <thead><tr><th>Type</th><th>Defanged Value</th><th>Source</th><th>Confidence</th></tr></thead>
                 <tbody>{ioc_rows or '<tr><td colspan="4" class="text-muted">No IOCs identified.</td></tr>'}</tbody>
@@ -448,13 +489,13 @@ def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = N
 
         <!-- Sandbox Telemetry -->
         <div class="card">
-            <div class="card-header">5. {html.escape(sandbox['label'])}</div>
+            <div class="card-header">6. {html.escape(sandbox['label'])}</div>
             {sandbox_block}
         </div>
 
         <!-- Incident Response Actions -->
         <div class="card">
-            <div class="card-header">6. Incident Containment & Response Log</div>
+            <div class="card-header">7. Incident Containment & Response Log</div>
             <table class="table">
                 <thead><tr><th>Action</th><th>Target</th><th>Mode</th><th>Status</th><th>Audit Ref</th></tr></thead>
                 <tbody>{act_rows or '<tr><td colspan="5" class="text-muted">No response actions triggered.</td></tr>'}</tbody>
