@@ -256,12 +256,17 @@ The M7 API runs on `http://127.0.0.1:8000/api/v1` and requires Bearer token auth
 
 ### Response & Approval Actions
 - **`POST /api/v1/analyses/{analysis_id}/actions/{action_id}/approve`**
-  - Authorization: Requires `admin` or `approver` role.
+  - Authorization: an authenticated `analyst` or `admin` user token. M7 has no separate
+    approver role, so an analyst can approve a proposal they raised.
   - Transitions action status from `awaiting_approval` to `approved`.
 - **`POST /api/v1/analyses/{analysis_id}/actions/{action_id}/reject`**
   - Rejects proposed containment action.
-- **`GET /api/v1/analyses/{analysis_id}/export?format={stix|json|csv|pdf}`**
-  - Exports threat intelligence artifacts and reports.
+- **`GET /api/v1/analyses/{analysis_id}/export?format={stix|json|csv}`**
+  - `json` returns the stored document, `csv` the response actions, and `stix` a STIX 2.1
+    bundle built by M6's exporter from the analysis' own actions and defanged IOCs.
+- **`GET /api/v1/analyses/{analysis_id}/export?format=pdf`**
+  - Returns `501`: M7 stores documents and does not render reports. M8's console serves
+    `GET /api/reports/{analysis_id}/pdf`.
 
 ---
 

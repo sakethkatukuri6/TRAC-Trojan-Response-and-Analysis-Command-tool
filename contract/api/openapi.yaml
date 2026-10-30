@@ -79,7 +79,8 @@ paths:
         - {$ref: "#/components/parameters/AnalysisId"}
         - {name: format, in: query, required: true, schema: {enum: [json, stix, csv, pdf]}}
       responses:
-        "200": {description: File}
+        "200": {description: "File. stix is emitted by M6's STIX 2.1 exporter."}
+        "501": {description: "format=pdf: M7 stores documents but does not render reports; M8 generates the PDF."}
   /health:
     get:
       security: []
