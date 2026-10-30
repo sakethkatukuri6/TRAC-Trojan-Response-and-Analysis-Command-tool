@@ -1,5 +1,7 @@
 # Analysis Platform Contract v1.0.0
 
+> **Comprehensive Technical Reference:** See [**DOCUMENTATION.md**](DOCUMENTATION.md) for full architectural diagrams, module specifications (M1–M8), CLI usage, and operations guide.
+
 The single source of truth that lets four people build eight modules in parallel.
 
 ```
