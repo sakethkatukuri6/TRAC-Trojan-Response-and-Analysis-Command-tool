@@ -219,17 +219,24 @@ exit /b %ERRORLEVEL%
 :CMD_RUN_CLIS
 echo.
 echo [*] Executing CLIs to regenerate contract outputs...
-set "SAMPLE_AID=00000003-0000-4000-8000-000000000003"
-set "SAMPLE_VID=00000003-0000-4000-8000-000000000003"
+echo     M4/M5/M6 publish only the sections M7 stored for a real analysis,
+echo     so the analysis UUID of a completed run is required.
+set "ANALYSIS_ID=%~2"
+if "!ANALYSIS_ID!"=="" set /p "ANALYSIS_ID=Analysis UUID recorded in M7: "
+if "!ANALYSIS_ID!"=="" (
+    echo [!] No analysis UUID given - there is no analysis to republish.
+    if "%~1"=="" pause & goto :MENU
+    exit /b 2
+)
 
 echo [*] Running M4 CLI...
-"%PYTHON_CMD%" -m m4_ioc.cli --analysis-id !SAMPLE_AID! --out m4_ioc\contract_out\iocs.json
+"%PYTHON_CMD%" -m m4_ioc.cli --analysis-id !ANALYSIS_ID! --out m4_ioc\contract_out\iocs.json
 
 echo [*] Running M5 CLI...
-"%PYTHON_CMD%" -m m5_detection.cli --analysis-id !SAMPLE_AID! --out m5_detection\contract_out\scoring.json
+"%PYTHON_CMD%" -m m5_detection.cli --analysis-id !ANALYSIS_ID! --out m5_detection\contract_out\scoring.json
 
 echo [*] Running M6 CLI...
-"%PYTHON_CMD%" -m m6_response.cli --analysis-id !SAMPLE_AID! --vault-id !SAMPLE_VID! --out m6_response\contract_out\response_actions.json
+"%PYTHON_CMD%" -m m6_response.cli --analysis-id !ANALYSIS_ID! --out m6_response\contract_out\response_actions.json
 
 echo [*] Emitting the M7 pipeline golden sample...
 "%PYTHON_CMD%" contract\tools\stub_module.py M7 --out m7_core\contract_out\pipeline.json

@@ -78,7 +78,9 @@ class EventProcessor:
                 analysis = self.analysis_repo.create(
                     analysis_id=analysis_id,
                     vault_id=vault_id,
-                    sha256=payload.get("sha256", "0" * 64),
+                    # The event schema requires a 64-hex payload.sha256 for
+                    # sample.received, so there is no hash to fall back to here.
+                    sha256=payload["sha256"],
                     status="received"
                 )
             else:

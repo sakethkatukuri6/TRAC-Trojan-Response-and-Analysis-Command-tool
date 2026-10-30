@@ -85,11 +85,14 @@ class SampleVault:
         self,
         data: bytes,
         original_name: str,
-        submitter: str = "analyst1",
+        submitter: Optional[str] = None,
         vault_id: Optional[str] = None,
         analysis_id: Optional[str] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, Any], bool]:
         """Ingest raw sample bytes into vault.
+
+        `submitter` is recorded only when a caller supplies one; inventing an analyst
+        name would put a person in the audit trail who never touched the sample.
 
         Returns:
             (sample_record, event_record, is_duplicate)

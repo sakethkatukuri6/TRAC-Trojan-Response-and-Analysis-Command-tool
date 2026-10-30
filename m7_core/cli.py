@@ -16,17 +16,12 @@ from pathlib import Path
 
 def generate_pipeline_output(analysis_id: str) -> dict:
     """Return the pipeline section recorded for a persisted analysis."""
-    from m7_core.database import SessionLocal
-    from m7_core.services.analysis_service import AnalysisService
+    from m7_core.services.analysis_service import load_stored_document
 
-    db = SessionLocal()
-    try:
-        doc = AnalysisService(db).get_analysis_document(analysis_id)
-    finally:
-        db.close()
-    if not doc or "pipeline" not in doc:
+    doc = load_stored_document(analysis_id)
+    if "pipeline" not in doc:
         raise LookupError(
-            f"Analysis '{analysis_id}' is not recorded in the M7 database; "
+            f"Analysis '{analysis_id}' has no pipeline section recorded; "
             "run the pipeline first. A pipeline section is never synthesised here."
         )
     return {"pipeline": doc["pipeline"]}

@@ -74,10 +74,20 @@ class AnalysisService:
 
         existing = self.repo.get_by_id(analysis_id)
         if existing is None:
+            # Both pointers identify bytes that must exist in the vault. Substituting
+            # the analysis id for a vault id, or zeros for a digest, would index an
+            # analysis under a sample that was never submitted.
+            vault_id = sample.get("vault_id")
+            sha256 = sample.get("sha256")
+            if not vault_id or not sha256:
+                raise ValueError(
+                    f"Analysis '{analysis_id}' has no sample.vault_id/sha256; "
+                    "a document must reference an ingested sample before it can be persisted."
+                )
             self.repo.create(
                 analysis_id=analysis_id,
-                vault_id=sample.get("vault_id") or analysis_id,
-                sha256=sample.get("sha256") or "0" * 64,
+                vault_id=vault_id,
+                sha256=sha256,
                 status="received",
             )
         elif existing.pipeline_status in self.FINAL_STATES:
@@ -136,3 +146,21 @@ class AnalysisService:
                 "message": str(detail.get("message", "")),
             })
         return errors
+
+
+def load_stored_document(analysis_id: str) -> Dict[str, Any]:
+    """Read a persisted analysis document out of the M7 database.
+
+    Module CLIs publish the sections they own from this document, so an id that was
+    never analysed raises instead of producing output for a sample nobody submitted.
+    """
+    from m7_core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        doc = AnalysisService(db).get_analysis_document(analysis_id)
+    finally:
+        db.close()
+    if not doc:
+        raise LookupError(f"Analysis '{analysis_id}' is not recorded in the M7 database.")
+    return doc

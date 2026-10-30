@@ -28,7 +28,7 @@ def health_check():
 def upload_sample(
     file: UploadFile = File(...),
     archive_password: Optional[str] = Form(None),
-    submitter: Optional[str] = Form("analyst1"),
+    submitter: Optional[str] = Form(None),
     authorization: Optional[str] = Header(None),
 ):
     """Intake sample: enforces 100 MiB cap, sanitizes filename, stores encrypted & defanged."""
@@ -56,16 +56,11 @@ def upload_sample(
             detail="Uploaded file is empty",
         )
 
-    # Normalize default form params if called directly
-    submitter_str = "analyst1"
-    if submitter is not None and not hasattr(submitter, "default"):
-        submitter_str = str(submitter)
-
     try:
         sample_rec, event_rec, is_duplicate = vault.ingest(
             data=raw_data,
             original_name=file.filename or "sample.bin",
-            submitter=submitter_str,
+            submitter=submitter,
         )
     except ValueError as exc:
         raise HTTPException(

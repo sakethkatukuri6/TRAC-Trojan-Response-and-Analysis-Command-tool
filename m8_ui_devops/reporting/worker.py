@@ -81,9 +81,13 @@ class ReportWorker:
         out_html: Optional[str | Path] = None,
     ) -> Dict[str, Any]:
         """Process an analysis document, write report files, and return report.done event."""
-        analysis_id = doc.get("analysis_id", str(uuid.uuid4()))
-        sample = doc.get("sample", {})
-        vault_id = sample.get("vault_id", analysis_id)
+        analysis_id = str(doc.get("analysis_id") or "")
+        vault_id = str((doc.get("sample") or {}).get("vault_id") or "")
+        if not analysis_id or not vault_id:
+            raise ValueError(
+                "This analysis document carries no analysis_id/sample.vault_id, so its "
+                "report cannot be attributed to an analysis or a sample."
+            )
 
         try:
             pdf_path = Path(out_pdf) if out_pdf else (self.reports_dir / f"{analysis_id}.pdf")

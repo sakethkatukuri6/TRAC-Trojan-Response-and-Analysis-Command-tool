@@ -97,7 +97,7 @@ class ReportData:
             size_bytes=sample.get("size_bytes", 0),
             file_type=sample.get("file_type", "unknown"),
             received_at=sample.get("received_at", datetime.now(timezone.utc).isoformat()),
-            submitter=sample.get("submitter", "system"),
+            submitter=sample.get("submitter") or "not recorded",
             clamav_result=sample.get("clamav_result", "not_run"),
             
             verdict_label=verdict.get("label", "unknown"),

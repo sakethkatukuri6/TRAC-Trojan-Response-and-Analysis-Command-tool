@@ -1,18 +1,17 @@
 """M8 UI, Reporting & DevOps CLI.
 
 Usage:
-  python -m m8_ui_devops.cli --analysis-id <uuid> --vault-id <uuid> --out <path>
+  python -m m8_ui_devops.cli --analysis-id <uuid> --out-pdf <path>
+  python -m m8_ui_devops.cli --input <analysis.json> --out-pdf <path>
   python -m m8_ui_devops.cli --serve-ui --port 8088
 """
 import argparse
-from datetime import datetime, timezone
 import json
-import os
 from pathlib import Path
 import sys
-import uuid
 import webbrowser
 
+from m7_core.services.analysis_service import load_stored_document
 from m8_ui_devops.evidence import build_presentation
 from m8_ui_devops.reporting.models import ReportData
 from m8_ui_devops.reporting.pdf_report import generate_pdf_report
@@ -101,7 +100,7 @@ def create_dashboard_app(host: str = "127.0.0.1", port: int = 8088):
         try:
             document = run_full_pipeline(
                 raw_bytes=content,
-                original_filename=file.filename or "sample.exe",
+                original_filename=file.filename or "sample.bin",
                 archive_password=archive_password,
             )
         except ArchiveRejected as exc:
@@ -174,8 +173,7 @@ def serve_dashboard(host: str = "127.0.0.1", port: int = 8088, open_browser: boo
 
 def main():
     parser = argparse.ArgumentParser(description="M8 UI, Reporting & DevOps CLI")
-    parser.add_argument("--analysis-id", required=False, default=None, help="Analysis UUID")
-    parser.add_argument("--vault-id", required=False, default=None, help="Vault UUID")
+    parser.add_argument("--analysis-id", required=False, default=None, help="Analysis UUID recorded by M7")
     parser.add_argument("--out", required=False, default=None, help="Output path (PDF, HTML, or report info)")
     parser.add_argument("--out-pdf", required=False, default=None, help="Output PDF path")
     parser.add_argument("--out-html", required=False, default=None, help="Output HTML path")
@@ -190,42 +188,28 @@ def main():
 
     if args.serve_ui:
         serve_dashboard(host=args.host, port=args.port, open_browser=args.open_browser)
-        return
+        return 0
 
     # CLI Report Generation Mode
-    analysis_id = args.analysis_id or str(uuid.uuid4())
-    vault_id = args.vault_id or analysis_id
+    if bool(args.analysis_id) == bool(args.input):
+        print(
+            "[!] Give exactly one of --analysis-id (an analysis M7 persisted) or "
+            "--input (an analysis document).",
+            file=sys.stderr,
+        )
+        return 2
 
-    # Load input analysis fixture
-    if args.input and Path(args.input).exists():
-        with open(args.input, "r", encoding="utf-8") as f:
-            doc = json.load(f)
-    else:
-        example_path = Path("contract/examples/valid_synthetic_trojan_record.json")
-        if example_path.exists():
-            with open(example_path, "r", encoding="utf-8") as f:
-                doc = json.load(f)
+    try:
+        if args.input:
+            input_path = Path(args.input)
+            if not input_path.exists():
+                raise LookupError(f"Analysis document '{args.input}' does not exist.")
+            doc = json.loads(input_path.read_text(encoding="utf-8"))
         else:
-            doc = {
-                "contract_version": "1.0.0",
-                "analysis_id": analysis_id,
-                "sample": {
-                    "vault_id": vault_id,
-                    "sha256": "c" * 64,
-                    "md5": "d" * 32,
-                    "size_bytes": 1024,
-                    "file_type": "pe",
-                    "original_name": "sample.exe",
-                    "received_at": datetime.now(timezone.utc).isoformat(),
-                    "stored_defanged": True,
-                    "stored_encrypted": True,
-                },
-                "pipeline": {"status": "complete", "stages": {}},
-            }
-
-    doc["analysis_id"] = analysis_id
-    if "sample" in doc:
-        doc["sample"]["vault_id"] = vault_id
+            doc = load_stored_document(args.analysis_id)
+    except (LookupError, json.JSONDecodeError) as exc:
+        print(f"[!] {exc}", file=sys.stderr)
+        return 1
 
     # Determine output destinations
     out_pdf = args.out_pdf
@@ -237,7 +221,11 @@ def main():
             out_html = args.out
 
     worker = ReportWorker()
-    event = worker.process_analysis(doc, out_pdf=out_pdf, out_html=out_html)
+    try:
+        event = worker.process_analysis(doc, out_pdf=out_pdf, out_html=out_html)
+    except ValueError as exc:
+        print(f"[!] {exc}", file=sys.stderr)
+        return 1
 
     # Save event
     event_path = Path(args.event) if args.event else Path("m8_ui_devops/contract_events/report_done.json")
@@ -255,7 +243,8 @@ def main():
         print(f"    Report Vault ID: {event['payload']['report_vault_id']}")
     else:
         print(f"    Status:      {event.get('type')} ({event.get('payload', {}).get('code')})")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -115,7 +115,7 @@ received ➔ static ➔ dynamic ➔ iocs ➔ scoring ➔ response ➔ report ➔
   - MITRE ATT&CK technique mapping (e.g., `T1071.001` Web Protocols, `T1547.001` Registry Run Keys).
 - **CLI Command:**
   ```cmd
-  python -m m4_ioc.cli --analysis-id 00000003-0000-4000-8000-000000000003 --out m4_ioc\contract_out\iocs.json
+  python -m m4_ioc.cli --analysis-id <analysis-uuid> --out m4_ioc\contract_out\iocs.json
   ```
 
 ---
@@ -141,7 +141,7 @@ received ➔ static ➔ dynamic ➔ iocs ➔ scoring ➔ response ➔ report ➔
   - Component contribution validation (sum of weighted components must match total score $\pm 1$).
 - **CLI Command:**
   ```cmd
-  python -m m5_detection.cli --analysis-id 00000003-0000-4000-8000-000000000003 --out m5_detection\contract_out\scoring.json
+  python -m m5_detection.cli --analysis-id <analysis-uuid> --out m5_detection\contract_out\scoring.json
   ```
 
 ---
@@ -157,7 +157,8 @@ received ➔ static ➔ dynamic ➔ iocs ➔ scoring ➔ response ➔ report ➔
   - **Rule Export:** Generates Suricata NIDS rules and STIX 2.1 Threat Intelligence bundles.
 - **CLI Command:**
   ```cmd
-  python -m m6_response.cli --analysis-id 00000003-0000-4000-8000-000000000003 --vault-id 00000003-0000-4000-8000-000000000003 --out m6_response\contract_out\response_actions.json
+  python -m m6_response.cli --analysis-id <analysis-uuid> --out m6_response\contract_out\response_actions.json
+  python -m m6_response.cli --input contract\examples\valid_synthetic_trojan_record.json --out plan.json
   ```
 
 ---
@@ -232,7 +233,7 @@ You can invoke tasks directly without navigating the menu:
 | `run.bat check-m5` | Validate M5 scoring and verdicts against the contract |
 | `run.bat check-m6` | Validate M6 response actions against contract rules |
 | `run.bat check-m7` | Validate M7 orchestration and pipeline outputs |
-| `run.bat run-clis` | Execute all module CLIs to regenerate compliant artifacts |
+| `run.bat run-clis <analysis-uuid>` | Republish M4/M5/M6 outputs for an analysis M7 persisted (prompts for the id if omitted) |
 | `run.bat ui` | Launch the SOC Analyst Web Console on port 8088 |
 | `run.bat server` | Start the M7 REST API Server on port 8000 |
 | `run.bat install` | Install all required Python packages |

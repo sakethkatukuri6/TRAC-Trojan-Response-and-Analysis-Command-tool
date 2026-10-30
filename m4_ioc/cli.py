@@ -1,112 +1,86 @@
+"""M4 IOC Extraction CLI.
+
+Usage:
+  python -m m4_ioc.cli --analysis-id <uuid> --out <path>
+
+Publishes the ``iocs`` section M4 extracted for a persisted analysis. Indicators are
+reportable only if an extraction actually found them: an analysis id that was never
+run is an error, not a template of domains, mutexes and beacons.
+"""
+from __future__ import annotations
+
 import argparse
 import json
-import uuid
-import re
-from datetime import datetime, timezone
 from pathlib import Path
+import sys
+import uuid
+from datetime import datetime, timezone
 
-def defang_url(url: str) -> str:
-    url = url.replace("http://", "hxxp://").replace("https://", "hxxps://")
-    return re.sub(r'\.', '[.]', url)
+from m7_core.services.analysis_service import load_stored_document
 
-def defang_ip(ip: str) -> str:
-    return ip.replace(".", "[.]")
+OWNED_SECTIONS = ("iocs",)
 
-def defang_domain(domain: str) -> str:
-    return domain.replace(".", "[.]")
 
-def create_event(analysis_id: str, count: int) -> dict:
+def generate_iocs_output(doc: dict) -> dict:
+    """Return the ``iocs`` section recorded on the stored document."""
+    out = {section: doc[section] for section in OWNED_SECTIONS if section in doc}
+    missing = [section for section in OWNED_SECTIONS if section not in out]
+    if missing:
+        raise LookupError(
+            f"Analysis '{doc.get('analysis_id')}' has no IOC section recorded (missing {missing}); "
+            "run the pipeline first. Indicators are never invented here."
+        )
+    return out
+
+
+def create_event(doc: dict) -> dict:
+    """Build the iocs.done event from the indicators M4 actually extracted."""
+    vault_id = str((doc.get("sample") or {}).get("vault_id") or "")
+    if not vault_id:
+        raise LookupError(
+            f"Analysis '{doc.get('analysis_id')}' records no sample.vault_id, "
+            "so no IOC event can be attributed to a sample."
+        )
     return {
         "event_id": str(uuid.uuid4()),
         "type": "iocs.done",
-        "analysis_id": analysis_id,
-        "vault_id": "00000003-0000-4000-8000-000000000003",
+        "analysis_id": doc["analysis_id"],
+        "vault_id": vault_id,
         "emitted_at": datetime.now(timezone.utc).isoformat(),
         "producer": "M4",
         "contract_version": "1.0.0",
         "payload": {
             "section": "iocs",
-            "ioc_count": count
+            "ioc_count": len(doc["iocs"].get("items") or [])
         }
     }
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--analysis-id", required=True)
-    parser.add_argument("--out", required=True)
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="M4 IOC Extraction CLI")
+    parser.add_argument("--analysis-id", required=True, help="Analysis UUID recorded by M7")
+    parser.add_argument("--out", required=True, help="Output path for IOC section JSON")
+    parser.add_argument("--event-out", required=False, default=None, help="Optional event output path")
     args = parser.parse_args()
 
-    # Stub data since we aren't parsing real zeek logs right now
-    iocs = [
-        {
-            "type": "domain",
-            "value": defang_domain("c2.example"),
-            "source": "pcap",
-            "confidence": 0.9
-        },
-        {
-            "type": "ip",
-            "value": defang_ip("192.0.2.10"),
-            "source": "pcap",
-            "confidence": 0.8
-        },
-        {
-            "type": "url",
-            "value": defang_url("http://c2.example/gate"),
-            "source": "static_strings",
-            "confidence": 0.85
-        },
-        {
-            "type": "mutex",
-            "value": "Global\\SYNTH_MTX_01",
-            "source": "dynamic",
-            "confidence": 0.7
-        },
-        {
-            "type": "registry_key",
-            "value": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Helper",
-            "source": "dynamic",
-            "confidence": 0.9
-        }
-    ]
-
-    out_data = {
-        "iocs": {
-            "status": "done",
-            "items": iocs,
-            "attack_techniques": [
-                {
-                    "id": "T1547.001",
-                    "tactic": "persistence",
-                    "evidence": "Run key written"
-                },
-                {
-                    "id": "T1071.001",
-                    "tactic": "command-and-control",
-                    "evidence": "Periodic HTTP to c2[.]example"
-                }
-            ],
-            "beacons": [
-                {
-                    "destination": "c2[.]example",
-                    "interval_s": 20,
-                    "jitter": 0.1,
-                    "count": 6
-                }
-            ]
-        }
-    }
+    try:
+        doc = load_stored_document(args.analysis_id)
+        out_data = generate_iocs_output(doc)
+        event = create_event(doc)
+    except LookupError as exc:
+        print(f"[!] {exc}", file=sys.stderr)
+        return 1
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w") as f:
-        json.dump(out_data, f, indent=2)
+    out_path.write_text(json.dumps(out_data, indent=2), encoding="utf-8")
 
-    # Output the event too
-    event_path = out_path.parent.parent / "contract_events" / f"iocs_done.json"
+    event_path = Path(args.event_out) if args.event_out else out_path.parent.parent / "contract_events" / "iocs_done.json"
     event_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(event_path, "w") as f:
-        json.dump(create_event(args.analysis_id, len(iocs)), f, indent=2)
+    event_path.write_text(json.dumps(event, indent=2), encoding="utf-8")
+    print(f"M4: published {sorted(out_data)} for analysis {args.analysis_id}")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

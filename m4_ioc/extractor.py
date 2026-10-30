@@ -24,6 +24,17 @@ _DOMAIN_RE = re.compile(
 )
 _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
 
+# The contract's semantic gate rejects any value still holding "[A-Za-z0-9-]\.[A-Za-z0-9]".
+# The boundaries are matched zero-width on purpose: a consuming pattern swallows the
+# character after each dot, so consecutive single-digit octets ("192.0.2.10", "8.8.8.8")
+# leave their last dot raw and the indicator fails validation.
+_RAW_DOT = re.compile(r"(?<=[A-Za-z0-9\-])\.(?=[A-Za-z0-9])")
+
+
+def _defang_dots(val: str) -> str:
+    return _RAW_DOT.sub("[.]", val)
+
+
 # Whitelist benign domains from appearing as hostile C2
 _BENIGN_DOMAINS = frozenset({
     "w3.org", "microsoft.com", "schemas.microsoft.com", "tempuri.org",
@@ -40,15 +51,13 @@ def defang(ioc_type: str, val: str) -> str:
     if ioc_type == "url":
         val = val.replace("https://", "hxxps://").replace("http://", "hxxp://")
         val = val.replace("HTTPS://", "hxxps://").replace("HTTP://", "hxxp://")
-        # Replace remaining raw dots with [.]
-        return re.sub(r"([A-Za-z0-9\-])\.([A-Za-z0-9])", r"\1[.]\2", val)
+        return _defang_dots(val)
     if ioc_type in ("domain", "ip"):
-        return re.sub(r"([A-Za-z0-9\-])\.([A-Za-z0-9])", r"\1[.]\2", val)
+        return _defang_dots(val)
     if ioc_type == "email":
         parts = val.split("@")
         if len(parts) == 2:
-            defanged_domain = re.sub(r"([A-Za-z0-9\-])\.([A-Za-z0-9])", r"\1[.]\2", parts[1])
-            return f"{parts[0]}@{defanged_domain}"
+            return f"{parts[0]}@{_defang_dots(parts[1])}"
         return val
     return val
 

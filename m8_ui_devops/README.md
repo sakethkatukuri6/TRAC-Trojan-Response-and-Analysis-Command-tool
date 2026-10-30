@@ -88,10 +88,14 @@ The interface avoids "vibe coded" tropes (random purple glows, empty decorative 
 ### Generate Forensic PDF and HTML Reports & Emit Event
 ```bash
 python -m m8_ui_devops.cli \
-  --analysis-id 00000003-0000-4000-8000-000000000003 \
-  --vault-id 00000003-0000-4000-8000-000000000003 \
+  --analysis-id <analysis-uuid> \
   --out-pdf data/reports/report.pdf \
   --out-html data/reports/report.html
+
+# Or report an analysis document handed over directly:
+python -m m8_ui_devops.cli \
+  --input ..\contract\examples\valid_synthetic_trojan_record.json \
+  --out-pdf data\reports\report.pdf
 ```
 
 ### Launch Interactive SOC Dashboard

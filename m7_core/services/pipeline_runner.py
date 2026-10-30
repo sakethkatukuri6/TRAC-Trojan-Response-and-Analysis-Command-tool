@@ -180,12 +180,17 @@ def unpack_if_archive(
 
 def run_full_pipeline(
     raw_bytes: bytes,
-    original_filename: str = "sample.exe",
+    original_filename: str,
     archive_password: Optional[str] = "infected",
     vault: Optional[SampleVault] = None,
     analysis_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Execute full TRAC analysis pipeline and return contract-valid result document."""
+    """Execute full TRAC analysis pipeline and return contract-valid result document.
+
+    `original_filename` is required: the name recorded in the sample section is
+    provenance, so a defaulted "sample.exe" would claim a filename nobody supplied
+    and assert the payload is a Windows executable.
+    """
     # 0. Unpack if password-protected archive
     binary_bytes, active_filename = unpack_if_archive(
         raw_bytes, original_filename, password=archive_password

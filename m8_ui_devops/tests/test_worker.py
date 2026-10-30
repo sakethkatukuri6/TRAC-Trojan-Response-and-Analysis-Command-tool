@@ -54,6 +54,16 @@ class TestReportWorker(unittest.TestCase):
             generated_files = list(Path(tmp_dir).glob("*"))
             self.assertGreaterEqual(len(generated_files), 2)  # .pdf and .html
 
+    def test_worker_does_not_invent_ids_for_an_unattributed_document(self):
+        """A document without an analysis id would otherwise be filed under a random one."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            worker = ReportWorker(reports_dir=tmp_dir)
+            with self.assertRaises(ValueError):
+                worker.process_analysis({"verdict": {"label": "benign"}})
+            with self.assertRaises(ValueError):
+                worker.process_analysis({"analysis_id": str(uuid.uuid4()), "sample": {}})
+            self.assertEqual(list(Path(tmp_dir).glob("*")), [])
+
 
 if __name__ == "__main__":
     unittest.main()
