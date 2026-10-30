@@ -144,7 +144,8 @@ def run_full_pipeline(
 
     # Prepare cleaned dynamic section without internal markers
     clean_dynamic = dict(dynamic_res)
-    clean_dynamic.pop("_detected_behaviors", None)
+    clean_dynamic.pop("_static_capabilities", None)
+    clean_dynamic.pop("_error", None)
 
     # 6. M6 Response Planner
     partial_doc: Dict[str, Any] = {
@@ -163,11 +164,11 @@ def run_full_pipeline(
         "analysis_id": assigned_aid,
         "sample": sample_rec,
         "pipeline": {
-            "status": "complete",
+            "status": "failed" if dynamic_res.get("status") == "failed" else "complete",
             "stages": {
                 "ingest": "done",
                 "static": "done",
-                "dynamic": "done",
+                "dynamic": dynamic_res.get("status", "failed"),
                 "iocs": "done",
                 "scoring": "done",
                 "response": "done",

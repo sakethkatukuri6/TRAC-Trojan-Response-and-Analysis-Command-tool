@@ -1,254 +1,115 @@
-"""
-M3 Behavioral Inference & Sandbox Emulation Engine
-==================================================
-Infers runtime behavioral patterns, process trees, file/registry modifications,
-and MITRE ATT&CK techniques from static analysis and binary artifacts.
+"""M3 dynamic-analysis integration and conservative static capability evidence.
 
-Conforms strictly to the `dynamic` section of `analysis_result.schema.json`.
+TRAC never pretends that a PE was executed. A report contains runtime events
+only after they are returned by an explicitly configured, isolated CAPEv2
+service. Without that service the dynamic stage is ``skipped``; the private
+``_static_capabilities`` field is for downstream in-process evidence scoring.
 """
 
 from __future__ import annotations
 
-import hashlib
-import re
+import json
+import os
+import time
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Set
+from urllib import error, request
 
 
-# Win32 API and .NET behavioral signatures
-BEHAVIOR_RULES = {
-    "injection": {
-        "att_id": "T1055",
-        "tactic": "privilege-escalation",
-        "description": "Process Injection / Memory Manipulation",
-        "keywords": [
-            "createremotethread", "virtualallocex", "writeprocessmemory",
-            "ntmapviewofsection", "queueuserapc", "setthreadcontext",
-            "rtlcreateuserthread", "ntcreatethreadex", "resumethread",
-            "process.start", "loadlibrary", "getprocaddress"
-        ],
-    },
-    "persistence": {
-        "att_id": "T1547.001",
-        "tactic": "persistence",
-        "description": "Registry Run Keys / Startup Persistence",
-        "keywords": [
-            "regsetvalueex", "regcreatekeyex", "currentversion\\run",
-            "currentversion\\runonce", "microsoft.win32.registry", "setvalue",
-            "schtasks", "taskkill", "taskscheduler"
-        ],
-    },
-    "c2_networking": {
-        "att_id": "T1071.001",
-        "tactic": "command-and-control",
-        "description": "Web Protocols / C2 Beaconing",
-        "keywords": [
-            "internetopen", "internetconnect", "httpsendrequest", "httpopenrequest",
-            "urldownloadtofile", "wsastartup", "getaddrinfo", "winhttpopen",
-            "winhttpconnect", "system.net.sockets", "tcpclient", "webclient",
-            "httpwebrequest", "downloadstring", "downloadfile", "networkstream",
-            "pastebin", "discordapp", "telegram"
-        ],
-    },
-    "evasion": {
-        "att_id": "T1497.001",
-        "tactic": "defense-evasion",
-        "description": "Virtualization / Sandbox Evasion & Anti-Debugging",
-        "keywords": [
-            "isdebuggerpresent", "checkremotedebuggerpresent", "ntqueryinformationprocess",
-            "gettickcount", "queryperformancecounter", "outputdebugstring",
-            "vmware", "virtualbox", "vbox", "qemu", "sandboxie", "sbiedll",
-            "wireshark", "fiddler", "procmon", "x64dbg", "ida"
-        ],
-    },
-    "keylogging": {
-        "att_id": "T1056.001",
-        "tactic": "collection",
-        "description": "Keylogging / Input Capture",
-        "keywords": [
-            "setwindowshookex", "getasynckeystate", "getkeystate", "getkeyboardstate",
-            "mapvirtualkey", "keylogger", "keystroke", "getforegroundwindow"
-        ],
-    },
-    "credentials": {
-        "att_id": "T1555",
-        "tactic": "credential-access",
-        "description": "Credentials from Password Stores / Browsers",
-        "keywords": [
-            "credread", "cryptunprotectdata", "lsaretrieveprivatedata",
-            "credenumerate", "vaultcli", "login data", "web data", "cookies.sqlite",
-            "logins.json", "passwords", "masterkey"
-        ],
-    },
-    "screen_capture": {
-        "att_id": "T1113",
-        "tactic": "collection",
-        "description": "Screen Capture / Desktop Surveillance",
-        "keywords": [
-            "bitblt", "getdc", "createcompatiblebitmap", "getdibits", "printwindow",
-            "copyscreen", "screencapture", "graphics.copyfromscreen"
-        ],
-    },
+BEHAVIOR_RULES: Dict[str, Dict[str, Any]] = {
+    "injection": {"att_id": "T1055", "tactic": "defense-evasion", "description": "Process injection capability", "keywords": ("createremotethread", "virtualallocex", "writeprocessmemory", "ntmapviewofsection", "queueuserapc", "setthreadcontext", "rtlcreateuserthread", "ntcreatethreadex")},
+    "persistence": {"att_id": "T1547.001", "tactic": "persistence", "description": "Registry Run Keys / Startup Folder capability", "keywords": ("regsetvalueex", "regcreatekeyex", "currentversion\\run", "currentversion\\runonce", "schtasks", "taskscheduler")},
+    "c2_networking": {"att_id": "T1071.001", "tactic": "command-and-control", "description": "Application-layer protocol capability", "keywords": ("internetopen", "internetconnect", "httpsendrequest", "httpopenrequest", "winhttpopen", "winhttpconnect", "wsastartup", "getaddrinfo", "tcpclient", "httpwebrequest")},
+    "evasion": {"att_id": "T1497.001", "tactic": "defense-evasion", "description": "Virtualization or debugger discovery capability", "keywords": ("isdebuggerpresent", "checkremotedebuggerpresent", "ntqueryinformationprocess", "vmware", "virtualbox", "sandboxie", "x64dbg")},
+    "keylogging": {"att_id": "T1056.001", "tactic": "collection", "description": "Input-capture capability", "keywords": ("setwindowshookex", "getasynckeystate", "getkeystate", "getkeyboardstate", "keylogger")},
+    "credentials": {"att_id": "T1555", "tactic": "credential-access", "description": "Credentials-from-password-stores capability", "keywords": ("credread", "cryptunprotectdata", "vaultcli", "login data", "cookies.sqlite", "logins.json")},
+    "screen_capture": {"att_id": "T1113", "tactic": "collection", "description": "Screen-capture capability", "keywords": ("bitblt", "getdc", "getdibits", "printwindow", "copyfromscreen")},
 }
 
 
-def infer_behavior(
-    data: bytes,
-    file_type: str,
-    static_result: Dict[str, Any],
-    filename: str = "sample.exe",
-) -> Dict[str, Any]:
-    """Infer runtime behavioral characteristics from static telemetry."""
-    if file_type != "pe":
-        return {
-            "status": "skipped",
-            "sandbox": {
-                "engine": "custom",
-                "guest_os": "win10-x64",
-                "run_id": str(uuid.uuid4()),
-                "duration_s": 0,
-                "timeout_s": 60,
-                "network_mode": "isolated",
-                "reverted": True,
-            },
-            "process_tree": [],
-            "file_events": [],
-            "registry_events": [],
-            "mutexes": [],
-            "dropped_files": [],
-            "api_summary": {},
-            "network_summary": {
-                "dns_queries": 0,
-                "http_requests": 0,
-                "tcp_connections": 0,
-            },
-        }
+def _capabilities(data: bytes, static_result: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Return only markers actually present in submitted bytes/imports."""
+    tokens: Set[str] = {str(v).lower() for v in static_result.get("pe", {}).get("imports", [])}
+    tokens.update(str(v).lower() for v in static_result.get("strings", {}).get("interesting", []))
+    # Latin-1 preserves every byte one-to-one while allowing string-marker
+    # matching without decoding errors on packed or malformed binaries.
+    raw = data.decode("latin-1").lower()
+    found: Dict[str, Dict[str, Any]] = {}
+    for name, rule in BEHAVIOR_RULES.items():
+        matches = [keyword for keyword in rule["keywords"] if keyword in raw or any(keyword in token for token in tokens)]
+        if matches:
+            found[name] = {"att_id": rule["att_id"], "tactic": rule["tactic"], "description": rule["description"], "matches": matches}
+    return found
 
-    # Aggregate all string markers and imports into lowercase tokens
-    tokens: Set[str] = set()
-    pe_meta = static_result.get("pe", {})
-    for imp in pe_meta.get("imports", []):
-        tokens.add(imp.lower())
 
-    strings_meta = static_result.get("strings", {})
-    for s in strings_meta.get("interesting", []):
-        tokens.add(s.lower())
+def _multipart_file(data: bytes, filename: str) -> tuple[bytes, str]:
+    boundary = "----trac-" + uuid.uuid4().hex
+    safe_name = filename.replace('"', "_").replace("\\", "_")
+    body = b"\r\n".join((f"--{boundary}".encode(), f'Content-Disposition: form-data; name="file"; filename="{safe_name}"'.encode(), b"Content-Type: application/octet-stream", b"", data, f"--{boundary}--".encode(), b""))
+    return body, boundary
 
-    # Scan raw bytes for keywords in lower form
-    raw_lower = data.lower()
 
-    detected_behaviors: Dict[str, Dict[str, Any]] = {}
+def _cape_request(url: str, token: Optional[str], body: Optional[bytes] = None, content_type: Optional[str] = None) -> Dict[str, Any]:
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    if content_type:
+        headers["Content-Type"] = content_type
+    req = request.Request(url, data=body, headers=headers, method="POST" if body is not None else "GET")
+    with request.urlopen(req, timeout=30) as response:  # nosec B310: explicit operator-configured endpoint
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _normalise_cape_report(report: Mapping[str, Any], task_id: str, timeout_s: int) -> Dict[str, Any]:
+    behavior = report.get("behavior", {}) if isinstance(report.get("behavior"), Mapping) else {}
+    processes = behavior.get("processes", []) if isinstance(behavior.get("processes"), list) else []
+    process_tree: List[Dict[str, Any]] = []
     api_summary: Dict[str, int] = {}
+    for proc in processes:
+        if not isinstance(proc, Mapping):
+            continue
+        process_tree.append({"pid": int(proc.get("process_id", 0)), "ppid": int(proc.get("parent_id", 0)), "name": str(proc.get("process_name", "unknown")), "command_line": str(proc.get("command_line", ""))})
+        for call in proc.get("calls", []) if isinstance(proc.get("calls"), list) else []:
+            if isinstance(call, Mapping) and call.get("api"):
+                api = str(call["api"])
+                api_summary[api] = api_summary.get(api, 0) + 1
+    summary = behavior.get("summary", {}) if isinstance(behavior.get("summary"), Mapping) else {}
+    network = report.get("network", {}) if isinstance(report.get("network"), Mapping) else {}
+    info = report.get("info", {}) if isinstance(report.get("info"), Mapping) else {}
+    machine = info.get("machine", {}) if isinstance(info.get("machine"), Mapping) else {}
+    return {"status": "done", "sandbox": {"engine": "capev2", "guest_os": str(machine.get("name", "unknown")), "run_id": task_id, "duration_s": int(info.get("duration", 0)), "timeout_s": timeout_s, "network_mode": "simulated_internet", "reverted": True}, "process_tree": process_tree, "file_events": [{"action": "create", "target": str(v)} for v in summary.get("write_files", [])], "registry_events": [{"action": "modify", "target": str(v)} for v in summary.get("write_keys", [])], "mutexes": [str(v) for v in summary.get("mutexes", [])], "dropped_files": [], "api_summary": api_summary, "network_summary": {"dns_queries": len(network.get("dns", [])), "http_requests": len(network.get("http", [])), "tcp_connections": len(network.get("tcp", []))}}
 
-    for cat_name, cat_info in BEHAVIOR_RULES.items():
-        matched_count = 0
-        for kw in cat_info["keywords"]:
-            kw_bytes = kw.encode("ascii", errors="ignore")
-            # Check in imports/interesting strings or raw binary
-            if any(kw in t for t in tokens) or (kw_bytes in raw_lower):
-                matched_count += 1
-                api_summary[kw] = api_summary.get(kw, 0) + 1
 
-        if matched_count > 0:
-            detected_behaviors[cat_name] = {
-                "att_id": cat_info["att_id"],
-                "tactic": cat_info["tactic"],
-                "description": cat_info["description"],
-                "matches": matched_count,
-            }
+def _submit_to_cape(data: bytes, filename: str, base_url: str, token: Optional[str], timeout_s: int) -> Dict[str, Any]:
+    root = base_url.rstrip("/")
+    body, boundary = _multipart_file(data, filename)
+    created = _cape_request(f"{root}/tasks/create/file/", token, body, f"multipart/form-data; boundary={boundary}")
+    ids = created.get("task_ids", [])
+    task_id = str(created.get("task_id") or (ids[0] if ids else ""))
+    if not task_id:
+        raise RuntimeError("CAPE did not return a task id")
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        view = _cape_request(f"{root}/tasks/view/{task_id}/", token)
+        status = str(view.get("task", {}).get("status", "")).lower()
+        if status in {"reported", "completed"}:
+            return _normalise_cape_report(_cape_request(f"{root}/tasks/report/{task_id}/json", token), task_id, timeout_s)
+        if status in {"failed", "recovered"}:
+            raise RuntimeError(f"CAPE task {task_id} ended with status {status}")
+        time.sleep(5)
+    raise TimeoutError(f"CAPE task {task_id} did not finish within {timeout_s} seconds")
 
-    # Process tree simulation
-    process_tree: List[Dict[str, Any]] = [
-        {
-            "pid": 1024,
-            "ppid": 480,
-            "name": filename or "sample.exe",
-            "command_line": f'"{filename or "sample.exe"}"',
-            "started_offset_ms": 120,
-        }
-    ]
 
-    if "injection" in detected_behaviors:
-        process_tree.append({
-            "pid": 2048,
-            "ppid": 1024,
-            "name": "svchost.exe",
-            "command_line": "C:\\Windows\\System32\\svchost.exe -k netsvcs",
-            "started_offset_ms": 850,
-        })
-
-    # File events
-    file_events: List[Dict[str, Any]] = []
-    dropped_files: List[Dict[str, Any]] = []
-
-    # If packed or high entropy, infer dropped payload
-    entropy = static_result.get("entropy", 0.0)
-    if entropy > 7.0 or "evasion" in detected_behaviors:
-        dropped_name = "payload_unpack.tmp"
-        dummy_hash = hashlib.sha256(data[:4096]).hexdigest()
-        file_events.append({
-            "action": "create",
-            "target": f"C:\\Users\\Analyst\\AppData\\Local\\Temp\\{dropped_name}",
-            "pid": 1024,
-            "offset_ms": 350,
-        })
-        dropped_files.append({
-            "sha256": dummy_hash,
-            "name": dropped_name,
-            "size_bytes": min(len(data), 65536),
-        })
-
-    # Registry events
-    registry_events: List[Dict[str, Any]] = []
-    if "persistence" in detected_behaviors or "regsetvalueex" in str(tokens):
-        registry_events.append({
-            "action": "create",
-            "target": r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run\TrojanUpdate",
-            "pid": 1024,
-            "offset_ms": 520,
-        })
-
-    # Mutex detection from interesting strings
-    mutexes: List[str] = []
-    for s in strings_meta.get("interesting", []):
-        if "mutex" in s.lower() or s.startswith("Global\\") or s.startswith("Local\\"):
-            mutexes.append(s[:128])
-    if not mutexes and ("rat" in filename.lower() or "async" in filename.lower()):
-        mutexes.append(f"Global\\AsyncRAT_{hashlib.md5(data[:256]).hexdigest()[:8]}")
-
-    # Network summary
-    dns_count = 0
-    http_count = 0
-    tcp_count = 0
-
-    if "c2_networking" in detected_behaviors or static_result.get("embedded_urls"):
-        urls = static_result.get("embedded_urls", [])
-        http_count = max(len(urls), 2)
-        dns_count = max(len(urls), 1)
-        tcp_count = http_count + 1
-
-    return {
-        "status": "done",
-        "sandbox": {
-            "engine": "custom",
-            "guest_os": "win10-x64",
-            "run_id": str(uuid.uuid4()),
-            "duration_s": 45,
-            "timeout_s": 120,
-            "network_mode": "isolated",
-            "reverted": True,
-        },
-        "process_tree": process_tree,
-        "file_events": file_events,
-        "registry_events": registry_events,
-        "mutexes": mutexes[:10],
-        "dropped_files": dropped_files,
-        "api_summary": api_summary,
-        "network_summary": {
-            "dns_queries": dns_count,
-            "http_requests": http_count,
-            "tcp_connections": tcp_count,
-        },
-        "_detected_behaviors": detected_behaviors,
-    }
+def infer_behavior(data: bytes, file_type: str, static_result: Dict[str, Any], filename: str = "sample.exe", cape_url: Optional[str] = None, cape_token: Optional[str] = None, timeout_s: int = 180) -> Dict[str, Any]:
+    """Return observed CAPE telemetry, or explicitly skip an unconfigured sandbox."""
+    capabilities = _capabilities(data, static_result) if file_type == "pe" else {}
+    endpoint = cape_url or os.getenv("TRAC_CAPE_URL")
+    token = cape_token or os.getenv("TRAC_CAPE_TOKEN")
+    if not endpoint:
+        return {"status": "skipped", "_static_capabilities": capabilities}
+    try:
+        observed = _submit_to_cape(data, filename, endpoint, token, timeout_s)
+        observed["_static_capabilities"] = capabilities
+        return observed
+    except (error.URLError, error.HTTPError, ValueError, RuntimeError, TimeoutError) as exc:
+        return {"status": "failed", "_static_capabilities": capabilities, "_error": str(exc)[:500]}

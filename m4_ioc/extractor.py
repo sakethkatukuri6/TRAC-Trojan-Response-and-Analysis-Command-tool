@@ -129,15 +129,16 @@ def extract_iocs(
         if fev.get("target"):
             add_ioc("filepath", fev["target"], "dynamic", 0.75)
 
-    # 4. MITRE ATT&CK Techniques from behavioral inference
+    # 4. ATT&CK techniques supported by actual static markers.  These describe
+    # capability, not observed execution; runtime observations arrive from CAPE.
     attack_techniques: List[Dict[str, Any]] = []
-    behaviors = dynamic_result.get("_detected_behaviors", {})
+    behaviors = dynamic_result.get("_static_capabilities", {})
 
     for cat_name, info in behaviors.items():
         attack_techniques.append({
             "id": info["att_id"],
             "tactic": info["tactic"],
-            "evidence": f"{info['description']} detected across {info['matches']} markers"[:500],
+            "evidence": f"Static markers: {', '.join(info['matches'])}"[:500],
         })
 
     # High entropy detection technique
@@ -148,23 +149,9 @@ def extract_iocs(
             "evidence": f"Obfuscated / Packed PE payload: Entropy {static_result['entropy']:.2f}",
         })
 
-    # 5. Beacons detection
+    # Beacon timing is an observed network property.  Static strings cannot
+    # establish frequency or jitter, so never invent it.
     beacons: List[Dict[str, Any]] = []
-    c2_candidates = [item["value"] for item in items if item["type"] in ("domain", "ip")]
-    if c2_candidates:
-        beacons.append({
-            "destination": c2_candidates[0],
-            "interval_s": 60.0,
-            "jitter": 0.15,
-            "count": 5,
-        })
-    elif "c2_networking" in behaviors:
-        beacons.append({
-            "destination": "malicious-c2[.]example",
-            "interval_s": 120.0,
-            "jitter": 0.1,
-            "count": 4,
-        })
 
     return {
         "status": "done",
