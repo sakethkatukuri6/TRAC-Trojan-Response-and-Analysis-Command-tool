@@ -114,6 +114,18 @@ only module that writes the database.
 | `TRAC_CAPE_SNAPSHOT_REVERTED` | Operator attestation that the guest reverts to its clean snapshot after every task; without it a completed CAPE run still fails closed | unset |
 | `MODULE_SECRET`, `USER_SECRET` | M7 API JWT signing keys | `.secrets` file (refused in production) |
 | `TRAC_ENV`, `REQUIRE_DEPLOYMENT_SECRETS` | Fail closed unless secrets are provisioned | unset |
+| `M1_INTAKE_URL` | M1 service M7 proxies sample uploads to; unset makes intake return 503 | unset |
+| `M7_API_URL` | M7 API origin M6 calls; unset uses the server published in `contract/api/openapi.yaml` | that server |
+| `M6_MODULE_TOKEN` | Bearer token M6 presents to M7 | minted locally by M7's module-token helper |
+| `TRAC_ARCHIVE_PASSWORD` | ZIP password assumed for archives that arrive without one | `infected` (MalwareBazaar) |
+| `TRAC_REPORTS_DIR` | Where generated PDF/HTML reports are written | `data/reports` |
+| `TRAC_UI_HOST`, `TRAC_UI_PORT` | Console bind address when `--host`/`--port` are not given | `127.0.0.1`, `8088` |
+| `TRAC_UI_ALLOWED_ORIGINS` | Comma-separated browser origins allowed to call the console API | the console's own origin |
+
+Contract-declared settings are read from `contract/`, not duplicated in code: the
+upload cap is `sample.size_bytes.maximum`, the API version is `info.version`, the
+event version is `contract_version`, and the retry budget and failure states are
+`failure.retry.max_attempts` and `failure.from_any`.
 
 Building or vetting the CAPEv2 lab that `m3_dynamic` submits to - host isolation,
 management-only API exposure, snapshot-reversion verification and the preflight

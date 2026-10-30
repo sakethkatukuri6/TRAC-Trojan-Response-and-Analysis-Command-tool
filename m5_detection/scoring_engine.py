@@ -38,6 +38,12 @@ MALICIOUS_MIN_SCORE = 60.0
 CRITICAL_MIN_SCORE = 80.0
 BENIGN_MAX_SCORE = 30.0
 
+# The identity of this scoring model, reported in every score section so a verdict
+# can be attributed to the weights that produced it. Both are bumped together:
+# changing FACTOR_MAX_POINTS or the bands above changes what the model is.
+SCORE_METHOD = "weighted_rules_v1"
+SCORE_MODEL_VERSION = "1.0.0"
+
 
 def allocate_components(points: Dict[str, float]) -> Tuple[float, List[Dict[str, Any]]]:
     """Turn the points claimed by fired factors into the score and its components.
@@ -310,8 +316,8 @@ def score_analysis(
         },
         "score": {
             "value": score_val,
-            "method": "weighted_rules_v1",
-            "model_version": "1.0.0",
+            "method": SCORE_METHOD,
+            "model_version": SCORE_MODEL_VERSION,
             "components": components,
         },
         "verdict": {

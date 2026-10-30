@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 from typing import Any, Dict, List, Optional, Tuple
@@ -28,8 +29,14 @@ from m3_dynamic.inference_engine import infer_behavior
 from m4_ioc.extractor import extract_iocs
 from m5_detection.scoring_engine import score_analysis
 from m6_response.planner.response_planner import ResponsePlanner
+from m7_core.contract.loader import get_contract_version
 
 logger = logging.getLogger(__name__)
+
+# MalwareBazaar — the feed this platform is normally fed from — protects its archives
+# with this word, so the intake screens default to it. TRAC_ARCHIVE_PASSWORD overrides
+# it for a source that uses another convention.
+DEFAULT_ARCHIVE_PASSWORD = os.getenv("TRAC_ARCHIVE_PASSWORD", "infected")
 
 # Member extensions that identify the executable payload inside a sample archive.
 EXECUTABLE_SUFFIXES = frozenset({
@@ -126,7 +133,7 @@ def _read_member(archive: Any, member: zipfile.ZipInfo, password: Optional[str])
 def unpack_if_archive(
     raw_data: bytes,
     filename: str,
-    password: Optional[str] = "infected",
+    password: Optional[str] = DEFAULT_ARCHIVE_PASSWORD,
 ) -> Tuple[bytes, str]:
     """Reduce a ZIP upload to its single payload, entirely in memory.
 
@@ -181,7 +188,7 @@ def unpack_if_archive(
 def run_full_pipeline(
     raw_bytes: bytes,
     original_filename: str,
-    archive_password: Optional[str] = "infected",
+    archive_password: Optional[str] = DEFAULT_ARCHIVE_PASSWORD,
     vault: Optional[SampleVault] = None,
     analysis_id: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -292,7 +299,7 @@ def run_full_pipeline(
 
     # 7. Assemble Full Contract Document
     doc: Dict[str, Any] = {
-        "contract_version": "1.0.0",
+        "contract_version": get_contract_version(),
         "analysis_id": assigned_aid,
         "sample": sample_rec,
         "pipeline": {

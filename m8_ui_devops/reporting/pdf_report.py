@@ -515,8 +515,9 @@ class PDFReportGenerator:
             else "No sandbox was executed for this analysis, so no runtime telemetry is claimed."
         )
         text = Paragraph(
-            "<b>Forensic Chain-of-Custody Certification:</b><br/>"
-            "This report was automatically synthesized by TRAC Module M8 in compliance with Contract v1.0.0. "
+            f"<b>Forensic Chain-of-Custody Certification:</b><br/>"
+            f"This report was automatically synthesized by TRAC Module M8 in compliance with "
+            f"Contract v{self.data.contract_version}. "
             + telemetry_note + " "
             "Indicators have been sanitized and defanged. Cryptographic hashes reflect verified immutable sample payload.",
             self.body_style,

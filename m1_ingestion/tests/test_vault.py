@@ -59,7 +59,7 @@ def test_vault_rejects_empty_file(temp_vault):
 def test_vault_rejects_oversized_file(temp_vault):
     # Test checking size bound
     oversized = b"A" * (MAX_FILE_SIZE + 1)
-    with pytest.raises(ValueError, match="exceeds maximum allowed cap"):
+    with pytest.raises(ValueError, match=f"exceeds the {MAX_FILE_SIZE} byte cap"):
         temp_vault.ingest(oversized, "big.bin")
 
 

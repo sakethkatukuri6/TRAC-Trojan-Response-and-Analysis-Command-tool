@@ -11,12 +11,13 @@ import os
 from typing import Any, Dict, Optional
 import httpx
 from fastapi import HTTPException, status
+from m1_ingestion.vault import MAX_FILE_SIZE
 from m7_core.api.auth import create_module_token
 
 
 class CappedStream(io.RawIOBase):
     """File-like streaming wrapper that enforces maximum byte cap without buffering in RAM."""
-    def __init__(self, raw_file: Any, max_size: int = 100 * 1024 * 1024):
+    def __init__(self, raw_file: Any, max_size: int = MAX_FILE_SIZE):
         self.raw = raw_file
         self.max_size = max_size
         self.bytes_read = 0
@@ -35,7 +36,7 @@ class CappedStream(io.RawIOBase):
             if self.bytes_read > self.max_size:
                 raise HTTPException(
                     status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail="File exceeds 100 MiB cap"
+                    detail=f"File exceeds the {self.max_size} byte upload cap"
                 )
         return chunk
 
@@ -56,7 +57,7 @@ class M1IntakeClient:
         filename: str,
         content_type: str = "application/octet-stream",
         archive_password: Optional[str] = None,
-        max_size: int = 100 * 1024 * 1024,
+        max_size: int = MAX_FILE_SIZE,
     ) -> Dict[str, Any]:
         """Stream sample intake upload to M1 ingestion service enforcing size cap."""
         if not self.is_configured:
@@ -83,7 +84,10 @@ class M1IntakeClient:
                 if resp.status_code in (200, 202):
                     return resp.json()
                 elif resp.status_code == 413:
-                    raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File exceeds 100 MiB cap")
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=f"File exceeds the {max_size} byte upload cap",
+                    )
                 elif resp.status_code == 422:
                     raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=resp.json())
                 else:

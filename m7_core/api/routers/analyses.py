@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
+from m1_ingestion.vault import MAX_FILE_SIZE
 from m7_core.database import get_db
 from m7_core.api.auth import get_authenticated_identity
 from m7_core.services.analysis_service import AnalysisService
@@ -23,13 +24,13 @@ async def upload_sample(
     """Upload a sample (M1 handles intake; M7 exposes it).
 
     Enforces M1 intake ownership and streams the proxy upload directly to M1
-    while enforcing the 100 MiB cap before/during streaming without buffering
-    the entire payload in memory.
+    while enforcing the contract's size cap before/during streaming without
+    buffering the entire payload in memory.
     """
-    if file.size and file.size > 100 * 1024 * 1024:
+    if file.size and file.size > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="File exceeds 100 MiB cap"
+            detail=f"File exceeds the {MAX_FILE_SIZE} byte upload cap"
         )
 
     result = await intake_client.forward_sample_upload(

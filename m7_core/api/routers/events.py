@@ -11,6 +11,7 @@ from m7_core.services.event_processor import (
     EventValidationError,
     EventProducerMismatchError,
     EventStateConflictError,
+    ContractConfigError,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["events"])
@@ -31,5 +32,8 @@ def post_event(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except EventStateConflictError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except ContractConfigError as e:
+        # The deployment's contract file is broken, not the caller's event.
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

@@ -37,6 +37,15 @@ class TestReportWorker(unittest.TestCase):
         self.assertEqual(ev["payload"]["code"], "DISK_FULL")
         self.assertTrue(ev["payload"]["retryable"])
 
+    def test_create_report_done_event_requires_a_real_reference(self):
+        """A caller that omits the reference gets an error, not the sample's own vault id.
+
+        Substituting one uuid for another would report a vault entry that never
+        received a report.
+        """
+        with self.assertRaises(TypeError):
+            create_report_done_event(str(uuid.uuid4()), str(uuid.uuid4()))
+
     def test_worker_process_analysis(self):
         fixture_path = ROOT / "contract" / "examples" / "valid_synthetic_trojan_record.json"
         with open(fixture_path, "r", encoding="utf-8") as f:
@@ -48,7 +57,10 @@ class TestReportWorker(unittest.TestCase):
 
             self.assertEqual(event.get("type"), "report.done")
             self.assertEqual(event.get("producer"), "M8")
-            self.assertIn("report_vault_id", event.get("payload", {}))
+            # M8 writes reports to disk, never into the vault, so the event names the
+            # vault entry the report came from. A freshly minted uuid would identify a
+            # stored report that does not exist.
+            self.assertEqual(event["payload"]["report_vault_id"], doc["sample"]["vault_id"])
 
             # Verify files were generated in reports_dir
             generated_files = list(Path(tmp_dir).glob("*"))

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from m7_core.contract.loader import get_openapi_spec
+from m7_core.contract.loader import get_openapi_spec, get_platform_version
 from m7_core.database import init_db
 from m7_core.api.routers import health, sections, actions, analyses, events, exports, auth_routes
 
@@ -19,7 +19,7 @@ def create_app() -> FastAPI:
     info = spec.get("info", {})
     app = FastAPI(
         title=info.get("title", "Malware Analysis Platform API (M7)"),
-        version=info.get("version", "1.0.0"),
+        version=get_platform_version(),
         description=info.get("description", "M7 Core API and Orchestration"),
         lifespan=lifespan,
     )

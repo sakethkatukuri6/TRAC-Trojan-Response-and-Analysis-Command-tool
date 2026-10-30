@@ -1,7 +1,8 @@
 """M1 Ingestion Intake & Vault Service (FastAPI).
 
 Exposes:
-- POST /samples (Intake API for samples with 100 MiB cap, filename sanitization, dedup)
+- POST /samples (intake capped at the contract's size limit, with filename
+  sanitization and dedup)
 - GET /samples/{vault_id} (Download decrypted bytes for authorized modules)
 - GET /samples/{vault_id}/metadata (Get sample metadata)
 - GET /health (Liveness)
@@ -14,8 +15,9 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Response, Upload
 from fastapi.responses import JSONResponse
 
 from m1_ingestion.vault import MAX_FILE_SIZE, SampleVault
+from m7_core.contract.loader import get_platform_version
 
-app = FastAPI(title="M1 Ingestion & Sample Vault Service", version="1.0.0")
+app = FastAPI(title="M1 Ingestion & Sample Vault Service", version=get_platform_version())
 vault = SampleVault()
 
 
@@ -31,7 +33,9 @@ def upload_sample(
     submitter: Optional[str] = Form(None),
     authorization: Optional[str] = Header(None),
 ):
-    """Intake sample: enforces 100 MiB cap, sanitizes filename, stores encrypted & defanged."""
+    """Intake sample: enforces the contract size cap, sanitizes the filename,
+    then stores the payload encrypted and defanged.
+    """
     # Read file with size check
     chunks = []
     total_bytes = 0
@@ -45,7 +49,7 @@ def upload_sample(
         if total_bytes > MAX_FILE_SIZE:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail="File exceeds 100 MiB cap",
+                detail=f"File exceeds the {MAX_FILE_SIZE} byte upload cap",
             )
         chunks.append(chunk)
 

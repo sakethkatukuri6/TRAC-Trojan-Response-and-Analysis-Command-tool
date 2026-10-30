@@ -1,7 +1,7 @@
 """Sample Vault Storage & Cryptography Engine for M1 Ingestion.
 
 Contract rules:
-- Max 100 MiB (104,857,600 bytes) cap.
+- Size cap = analysis_result.schema.json's sample.size_bytes maximum, read at import.
 - `stored_defanged`: true (payload is defanged to prevent execution or host AV triggers).
 - `stored_encrypted`: true (payload is encrypted at rest using AES / Fernet).
 - Duplicate SHA-256 detection returns existing record with `duplicate_of: <vault_id>`.
@@ -23,8 +23,9 @@ from cryptography.fernet import Fernet
 from m1_ingestion.classifier import classify_file
 from m1_ingestion.sanitizer import sanitize_filename
 from m1_ingestion.scanner import scan_sample
+from m7_core.contract.loader import get_contract_version, get_max_upload_bytes
 
-MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MiB
+MAX_FILE_SIZE = get_max_upload_bytes()  # contract/schemas: sample.size_bytes.maximum
 DEFANG_XOR_KEY = 0x5A
 
 
@@ -101,7 +102,10 @@ class SampleVault:
         if size == 0:
             raise ValueError("Sample cannot be empty (size must be at least 1 byte)")
         if size > MAX_FILE_SIZE:
-            raise ValueError(f"Sample size {size} exceeds maximum allowed cap of 100 MiB (104857600 bytes)")
+            raise ValueError(
+                f"Sample size {size} exceeds the {MAX_FILE_SIZE} byte cap declared by "
+                "analysis_result.schema.json."
+            )
 
         # Calculate standard hashes
         sha256 = hashlib.sha256(data).hexdigest()
@@ -184,7 +188,7 @@ class SampleVault:
             "vault_id": assigned_vault_id,
             "emitted_at": datetime.now(timezone.utc).isoformat(),
             "producer": "M1",
-            "contract_version": "1.0.0",
+            "contract_version": get_contract_version(),
             "payload": event_payload,
         }
 

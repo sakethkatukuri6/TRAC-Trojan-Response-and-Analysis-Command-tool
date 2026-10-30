@@ -3,25 +3,26 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
+from m7_core.contract.loader import get_final_states, get_section_owners
 from m7_core.repository.analysis_repo import AnalysisRepository
 from m7_core.repository.audit_repo import AuditRepository
 from m7_core.services.section_service import SectionService, SectionStateConflictError
 
+# Terminal states derived from state_machine.yaml, shared with section_service.
+FINAL_STATES = tuple(get_final_states())
+
 
 class AnalysisService:
-    #: Sections persisted on behalf of the module that owns each one.
+    #: Sections persisted on behalf of the module that owns each one, exactly as
+    #: state_machine.yaml declares. A second list here would silently stop
+    #: persisting a section the contract had just assigned to a module.
+    #: `pipeline` is excluded: M7 mutates that status itself and section_service
+    #: refuses it as a section.
     SECTION_WRITERS = {
-        "sample": "M1",
-        "static": "M2",
-        "dynamic": "M3",
-        "iocs": "M4",
-        "detections": "M5",
-        "score": "M5",
-        "verdict": "M5",
-        "response_actions": "M6",
+        section: owner
+        for section, owner in get_section_owners().items()
+        if section != "pipeline"
     }
-
-    FINAL_STATES = ("complete", "failed", "dead_letter")
 
     def __init__(self, db: Session):
         self.db = db
@@ -90,7 +91,7 @@ class AnalysisService:
                 sha256=sha256,
                 status="received",
             )
-        elif existing.pipeline_status in self.FINAL_STATES:
+        elif existing.pipeline_status in FINAL_STATES:
             raise SectionStateConflictError(
                 f"Analysis '{analysis_id}' is already in final state '{existing.pipeline_status}'"
             )

@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from m7_core.contract.loader import get_contract_version
+
 # A report may never imply a condition it did not observe. Absent sandbox fields
 # render as this value rather than a passing default.
 NOT_OBSERVED = "not_observed"
@@ -88,7 +90,9 @@ class ReportData:
         pipeline = doc.get("pipeline", {})
 
         return cls(
-            contract_version=doc.get("contract_version", "1.0.0"),
+            # The document's own stamp when it carries one; otherwise the version of the
+            # contract this deployment is running. Never a literal that can drift from it.
+            contract_version=doc.get("contract_version") or get_contract_version(),
             analysis_id=doc.get("analysis_id", "unknown"),
             sample_vault_id=sample.get("vault_id", doc.get("analysis_id", "unknown")),
             sample_name=sample.get("original_name", "unnamed_sample"),

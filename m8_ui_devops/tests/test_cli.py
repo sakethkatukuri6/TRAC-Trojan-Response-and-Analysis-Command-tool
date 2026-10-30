@@ -51,7 +51,7 @@ class TestM8CLI(unittest.TestCase):
             self.assertEqual(event.get("type"), "report.done")
             self.assertEqual(event.get("analysis_id"), source["analysis_id"])
             self.assertEqual(event.get("vault_id"), source["sample"]["vault_id"])
-            self.assertIn("report_vault_id", event.get("payload", {}))
+            self.assertEqual(event["payload"]["report_vault_id"], source["sample"]["vault_id"])
         finally:
             if pdf_path.exists():
                 pdf_path.unlink()

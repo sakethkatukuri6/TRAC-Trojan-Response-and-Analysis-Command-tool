@@ -33,6 +33,11 @@ class EventStateConflictError(Exception):
     pass
 
 
+class ContractConfigError(Exception):
+    """Raised when state_machine.yaml lacks a policy M7 needs and will not guess one."""
+    pass
+
+
 class EventProcessor:
     def __init__(self, db: Session):
         self.db = db
@@ -93,7 +98,19 @@ class EventProcessor:
         # 5. Handle stage.failed event
         if event_type == "stage.failed":
             failure_cfg = self.sm.get("failure", {})
-            from_any = failure_cfg.get("from_any", ["static", "dynamic", "iocs", "scoring", "response", "report"])
+            # All three come from state_machine.yaml. A hardcoded fallback here would
+            # let the engine and the contract disagree about which stages may fail,
+            # how often they may retry, and where an exhausted failure lands, with the
+            # contract silently losing.
+            from_any = failure_cfg.get("from_any")
+            max_attempts = (failure_cfg.get("retry") or {}).get("max_attempts")
+            on_exhausted = failure_cfg.get("on_exhausted")
+            if not from_any or not max_attempts or not on_exhausted:
+                raise ContractConfigError(
+                    "state_machine.yaml declares no failure.from_any, "
+                    "failure.retry.max_attempts or failure.on_exhausted; refusing to "
+                    "guess a retry policy."
+                )
             if current_state not in from_any:
                 raise EventStateConflictError(
                     f"Failure event 'stage.failed' not allowed from state '{current_state}'"
@@ -102,7 +119,7 @@ class EventProcessor:
             retryable = payload.get("retryable", False)
             attempt = event.get("attempt", 1)
 
-            if retryable and attempt < 3:
+            if retryable and attempt < max_attempts:
                 self.event_repo.record_event(
                     event_id=event_id,
                     event_type=event_type,
@@ -120,7 +137,10 @@ class EventProcessor:
                     "event_id": event_id
                 }
             else:
-                self.analysis_repo.update_pipeline(analysis_id=analysis_id, status="dead_letter")
+                # The exhausted destination is failure.on_exhausted from the contract;
+                # naming the state here instead would let M7 park failures somewhere
+                # the state machine does not recognise.
+                self.analysis_repo.update_pipeline(analysis_id=analysis_id, status=on_exhausted)
                 self.event_repo.record_event(
                     event_id=event_id,
                     event_type=event_type,
@@ -129,11 +149,11 @@ class EventProcessor:
                     producer=producer,
                     payload=payload,
                     emitted_at=emitted_at,
-                    status="dead_letter",
+                    status=on_exhausted,
                     attempt=attempt
                 )
                 return {
-                    "status": "dead_letter",
+                    "status": on_exhausted,
                     "event_id": event_id
                 }
 

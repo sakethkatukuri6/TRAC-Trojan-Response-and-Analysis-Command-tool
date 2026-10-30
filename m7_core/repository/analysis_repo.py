@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
+from m7_core.contract.loader import get_contract_version
 from m7_core.models.analysis import AnalysisModel, AnalysisSectionModel
 
 
@@ -103,7 +104,7 @@ class AnalysisRepository:
         if not analysis:
             return None
         doc: Dict[str, Any] = {
-            "contract_version": "1.0.0",
+            "contract_version": get_contract_version(),
             "analysis_id": analysis.analysis_id,
             "pipeline": {
                 "status": analysis.pipeline_status,

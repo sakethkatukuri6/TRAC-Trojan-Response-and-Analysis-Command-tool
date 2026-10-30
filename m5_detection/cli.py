@@ -16,6 +16,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 
+from m7_core.contract.loader import get_contract_version
 from m7_core.services.analysis_service import load_stored_document
 
 OWNED_SECTIONS = ("detections", "score", "verdict")
@@ -49,7 +50,7 @@ def create_event(doc: dict) -> dict:
         "vault_id": vault_id,
         "emitted_at": datetime.now(timezone.utc).isoformat(),
         "producer": "M5",
-        "contract_version": "1.0.0",
+        "contract_version": get_contract_version(),
         "payload": {
             "section": "verdict",
             "label": verdict["label"],

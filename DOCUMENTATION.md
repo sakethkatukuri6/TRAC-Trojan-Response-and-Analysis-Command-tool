@@ -75,7 +75,7 @@ received ➔ static ➔ dynamic ➔ iocs ➔ scoring ➔ response ➔ report ➔
 ### Module 1: Ingestion & Sample Vault (`m1_ingestion`)
 - **Purpose:** Ingests untrusted binaries safely into the secure vault without risking host infection or endpoint AV interference.
 - **Key Capabilities:**
-  - **100 MiB File Cap:** Strict streaming boundary enforcement (`MAX_FILE_SIZE = 104,857,600` bytes).
+  - **Contract Size Cap:** Streaming intake rejects payloads above `MAX_FILE_SIZE`, which is read from `sample.size_bytes.maximum` in `contract/schemas/analysis_result.schema.json`.
   - **Filename Sanitization:** Strips path traversals, control characters, and unsafe extensions.
   - **Cryptographic Storage:** Defangs the file via XOR byte-masking (`0x5A`) and encrypts via AES/Fernet at rest.
   - **Deduplication:** Computes SHA-256 upon intake; duplicates link to existing `vault_id` records (`duplicate_of`).

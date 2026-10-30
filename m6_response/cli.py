@@ -19,6 +19,7 @@ import sys
 import uuid
 
 from m6_response.planner.response_planner import ResponsePlanner
+from m7_core.contract.loader import get_contract_version
 from m7_core.services.analysis_service import load_stored_document
 
 
@@ -49,7 +50,7 @@ def create_response_done_event(doc: dict, actions: list) -> dict:
         "vault_id": vault_id,
         "emitted_at": datetime.now(timezone.utc).isoformat(),
         "producer": "M6",
-        "contract_version": "1.0.0",
+        "contract_version": get_contract_version(),
         "payload": {
             "section": "response_actions",
             "action_count": len(actions),

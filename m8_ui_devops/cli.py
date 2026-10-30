@@ -7,16 +7,25 @@ Usage:
 """
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 import webbrowser
 
+from m1_ingestion.vault import MAX_FILE_SIZE
+from m7_core.contract.loader import get_platform_version
 from m7_core.services.analysis_service import load_stored_document
 from m8_ui_devops.evidence import build_presentation
 from m8_ui_devops.reporting.models import ReportData
 from m8_ui_devops.reporting.pdf_report import generate_pdf_report
 from m8_ui_devops.reporting.html_report import generate_html_report
-from m8_ui_devops.reporting.worker import create_report_done_event, ReportWorker
+from m8_ui_devops.reporting.worker import DEFAULT_REPORTS_DIR, create_report_done_event, ReportWorker
+
+# The console's bind address, overridable per deployment. --host/--port still win on
+# the command line; these exist so run.bat and a service manager can configure the
+# same console without editing source.
+DEFAULT_UI_HOST = os.getenv("TRAC_UI_HOST", "127.0.0.1")
+DEFAULT_UI_PORT = int(os.getenv("TRAC_UI_PORT", "8088"))
 
 
 def find_available_port(host: str, preferred_port: int) -> int:
@@ -40,7 +49,20 @@ def find_available_port(host: str, preferred_port: int) -> int:
     return preferred_port
 
 
-def create_dashboard_app(host: str = "127.0.0.1", port: int = 8088):
+def _allowed_origins(host: str, port: int) -> list:
+    """Origins permitted to call the console's API.
+
+    The console is served by this process, so its own origin is enough. Anything else
+    has to be declared by the operator instead of defaulting to a wildcard.
+    """
+    configured = os.getenv("TRAC_UI_ALLOWED_ORIGINS", "").strip()
+    if configured:
+        return [origin.strip() for origin in configured.split(",") if origin.strip()]
+    bind = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    return [f"http://{bind}:{port}"]
+
+
+def create_dashboard_app(host: str = DEFAULT_UI_HOST, port: int = DEFAULT_UI_PORT):
     """Build the M8 command console FastAPI application.
 
     The console is a presentation layer over M7: samples are analysed by the
@@ -53,15 +75,23 @@ def create_dashboard_app(host: str = "127.0.0.1", port: int = 8088):
 
     from m7_core.database import get_db
     from m7_core.services.analysis_service import AnalysisService
-    from m7_core.services.pipeline_runner import ArchiveRejected, run_full_pipeline
+    from m7_core.services.pipeline_runner import (
+        DEFAULT_ARCHIVE_PASSWORD,
+        ArchiveRejected,
+        run_full_pipeline,
+    )
     from m7_core.services.section_service import SectionStateConflictError
 
-    app = FastAPI(title="TRAC Security Command Platform (M8)", version="1.0.0")
+    app = FastAPI(title="TRAC Security Command Platform (M8)", version=get_platform_version())
 
+    # The console is served by this same process, so it is same-origin and needs no
+    # credentialed cross-origin access. `allow_origins=["*"]` with
+    # `allow_credentials=True` is both rejected by browsers and, if honoured, would let
+    # any page replay this analyst's bearer token, so the allowed origins are explicit.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=_allowed_origins(host, port),
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -74,7 +104,7 @@ def create_dashboard_app(host: str = "127.0.0.1", port: int = 8088):
 
     @app.get("/api/health")
     def health_check():
-        return {"status": "ok", "module": "M8_UI_DEVOPS", "version": "1.0.0"}
+        return {"status": "ok", "module": "M8_UI_DEVOPS", "version": get_platform_version()}
 
     @app.get("/api/analyses", summary="List analyses persisted by M7")
     def list_analyses(db: Session = Depends(get_db)):
@@ -88,12 +118,12 @@ def create_dashboard_app(host: str = "127.0.0.1", port: int = 8088):
     @app.post("/api/samples/upload", summary="Analyse an uploaded sample")
     async def upload_sample_endpoint(
         file: UploadFile = File(...),
-        archive_password: str = Form("infected"),
+        archive_password: str = Form(DEFAULT_ARCHIVE_PASSWORD),
         db: Session = Depends(get_db),
     ):
         content = await file.read()
-        if len(content) > 100 * 1024 * 1024:
-            raise HTTPException(status_code=413, detail="File exceeds 100 MiB limit")
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail=f"File exceeds the {MAX_FILE_SIZE} byte upload cap")
         if not content:
             raise HTTPException(status_code=422, detail="Uploaded file is empty")
 
@@ -121,7 +151,7 @@ def create_dashboard_app(host: str = "127.0.0.1", port: int = 8088):
     @app.get("/api/reports/{analysis_id}/pdf")
     def get_report_pdf(analysis_id: str, db: Session = Depends(get_db)):
         doc = load_document(analysis_id, db)
-        out_path = Path(f"data/reports/{analysis_id}.pdf")
+        out_path = Path(DEFAULT_REPORTS_DIR) / f"{analysis_id}.pdf"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         generate_pdf_report(doc, out_path)
         return Response(content=out_path.read_bytes(), media_type="application/pdf")
@@ -150,7 +180,7 @@ def create_dashboard_app(host: str = "127.0.0.1", port: int = 8088):
     return app
 
 
-def serve_dashboard(host: str = "127.0.0.1", port: int = 8088, open_browser: bool = False):
+def serve_dashboard(host: str = DEFAULT_UI_HOST, port: int = DEFAULT_UI_PORT, open_browser: bool = False):
     """Serve the web UI using FastAPI / uvicorn."""
     import uvicorn
     from m7_core.database import init_db
@@ -180,8 +210,8 @@ def main():
     parser.add_argument("--event", required=False, default=None, help="Output event path")
     parser.add_argument("--input", required=False, default=None, help="Input analysis JSON document")
     parser.add_argument("--serve-ui", action="store_true", help="Launch the local SOC analyst web UI")
-    parser.add_argument("--host", default="127.0.0.1", help="Host to bind for UI server")
-    parser.add_argument("--port", type=int, default=8088, help="Port to bind for UI server")
+    parser.add_argument("--host", default=DEFAULT_UI_HOST, help="Host to bind for UI server")
+    parser.add_argument("--port", type=int, default=DEFAULT_UI_PORT, help="Port to bind for UI server")
     parser.add_argument("--open-browser", action="store_true", help="Open browser on server launch")
 
     args = parser.parse_args()

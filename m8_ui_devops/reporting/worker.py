@@ -8,23 +8,34 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 import uuid
 
+from m7_core.contract.loader import get_contract_version
 from m8_ui_devops.reporting.pdf_report import generate_pdf_report
 from m8_ui_devops.reporting.html_report import generate_html_report
 
 logger = logging.getLogger("m8_report_worker")
 
+# Reports are written under the working directory by default; operators serving
+# several consoles at once point this at a distinct volume per deployment.
+DEFAULT_REPORTS_DIR = os.getenv("TRAC_REPORTS_DIR", "data/reports")
+
 
 def create_report_done_event(
     analysis_id: str,
     vault_id: str,
-    report_vault_id: Optional[str] = None,
+    report_vault_id: str,
     attempt: int = 1,
 ) -> Dict[str, Any]:
-    """Create a strictly contract-valid report.done event envelope."""
+    """Create a strictly contract-valid report.done event envelope.
+
+    report_vault_id names the vault entry the report was generated from, which is
+    what contract/tools/stub_module.py does. An id for a report that was never
+    vaulted would be unresolvable by anything downstream.
+    """
     return {
         "event_id": str(uuid.uuid4()),
         "type": "report.done",
@@ -32,10 +43,10 @@ def create_report_done_event(
         "vault_id": vault_id,
         "emitted_at": datetime.now(timezone.utc).isoformat(),
         "producer": "M8",
-        "contract_version": "1.0.0",
+        "contract_version": get_contract_version(),
         "attempt": attempt,
         "payload": {
-            "report_vault_id": report_vault_id or vault_id,
+            "report_vault_id": report_vault_id,
         },
     }
 
@@ -56,7 +67,7 @@ def create_stage_failed_event(
         "vault_id": vault_id,
         "emitted_at": datetime.now(timezone.utc).isoformat(),
         "producer": "M8",
-        "contract_version": "1.0.0",
+        "contract_version": get_contract_version(),
         "attempt": attempt,
         "payload": {
             "stage": "report",
@@ -70,7 +81,7 @@ def create_stage_failed_event(
 class ReportWorker:
     """Worker processing analysis documents to produce forensic reports and events."""
 
-    def __init__(self, reports_dir: str | Path = "data/reports"):
+    def __init__(self, reports_dir: str | Path = DEFAULT_REPORTS_DIR):
         self.reports_dir = Path(reports_dir)
         self.reports_dir.mkdir(parents=True, exist_ok=True)
 
@@ -99,13 +110,11 @@ class ReportWorker:
             generate_pdf_report(doc, pdf_path)
             generate_html_report(doc, html_path)
 
-            report_vault_id = str(uuid.uuid4())
-            event = create_report_done_event(
+            return create_report_done_event(
                 analysis_id=analysis_id,
                 vault_id=vault_id,
-                report_vault_id=report_vault_id,
+                report_vault_id=vault_id,
             )
-            return event
         except Exception as e:
             logger.exception("Failed to generate report for analysis %s", analysis_id)
             return create_stage_failed_event(

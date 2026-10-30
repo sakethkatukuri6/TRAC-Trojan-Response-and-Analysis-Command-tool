@@ -44,6 +44,27 @@ _BENIGN_DOMAINS = frozenset({
 })
 
 
+# How much each extraction path is trusted, reported as `confidence` on the
+# indicator. A hash read back from the vault record is certain; a domain-shaped
+# substring of the string table is a guess about what that text meant, so it ranks
+# lowest. Observed dynamic artefacts outrank their static counterparts because a
+# registry key seen at runtime is a fact, while one found as a string is only a
+# possibility. Edit here, not at the call sites, so the ranking stays comparable.
+SOURCE_CONFIDENCE = {
+    "sample_hash": 1.0,
+    "embedded_url": 0.85,
+    "url_in_strings": 0.8,
+    "ip_in_strings": 0.75,
+    "domain_in_strings": 0.7,
+    "email_in_strings": 0.65,
+    "registry_in_strings": 0.75,
+    "mutex_in_strings": 0.75,
+    "dynamic_mutex": 0.85,
+    "dynamic_registry": 0.8,
+    "dynamic_filepath": 0.75,
+}
+
+
 def defang(ioc_type: str, val: str) -> str:
     """Strictly defang indicators per contract semantic rules."""
     if not val:
@@ -86,9 +107,9 @@ def extract_iocs(
 
     # 1. Hashes from sample
     if sample_record.get("sha256"):
-        add_ioc("sha256", sample_record["sha256"], "static_strings", 1.0)
+        add_ioc("sha256", sample_record["sha256"], "static_strings", SOURCE_CONFIDENCE["sample_hash"])
     if sample_record.get("md5"):
-        add_ioc("md5", sample_record["md5"], "static_strings", 1.0)
+        add_ioc("md5", sample_record["md5"], "static_strings", SOURCE_CONFIDENCE["sample_hash"])
 
     # 2. Extract from static strings & embedded URLs
     strings_meta = static_result.get("strings", {})
@@ -96,47 +117,47 @@ def extract_iocs(
     embedded_urls = static_result.get("embedded_urls", [])
 
     for u in embedded_urls:
-        add_ioc("url", u, "static_strings", 0.85)
+        add_ioc("url", u, "static_strings", SOURCE_CONFIDENCE["embedded_url"])
 
     for s in interesting:
         # Check URLs
         for m in _URL_RE.findall(s):
-            add_ioc("url", m, "static_strings", 0.8)
+            add_ioc("url", m, "static_strings", SOURCE_CONFIDENCE["url_in_strings"])
 
         # Check IPs
         for m in _IP_RE.findall(s):
             if not m.startswith("127.") and not m.startswith("0.") and not m.startswith("255."):
-                add_ioc("ip", m, "static_strings", 0.75)
+                add_ioc("ip", m, "static_strings", SOURCE_CONFIDENCE["ip_in_strings"])
 
         # Check Domains
         for m in _DOMAIN_RE.findall(s):
             m_clean = m.lower().strip()
             if not any(m_clean.endswith(b) for b in _BENIGN_DOMAINS):
-                add_ioc("domain", m_clean, "static_strings", 0.7)
+                add_ioc("domain", m_clean, "static_strings", SOURCE_CONFIDENCE["domain_in_strings"])
 
         # Check Emails
         for m in _EMAIL_RE.findall(s):
-            add_ioc("email", m, "static_strings", 0.65)
+            add_ioc("email", m, "static_strings", SOURCE_CONFIDENCE["email_in_strings"])
 
         # Check Registry
         if s.startswith("HKCU\\") or s.startswith("HKLM\\") or s.startswith("HKCR\\"):
-            add_ioc("registry_key", s, "static_strings", 0.75)
+            add_ioc("registry_key", s, "static_strings", SOURCE_CONFIDENCE["registry_in_strings"])
 
         # Check Mutexes
         if s.startswith("Global\\") or s.startswith("Local\\") or "mutex" in s.lower():
-            add_ioc("mutex", s, "static_strings", 0.75)
+            add_ioc("mutex", s, "static_strings", SOURCE_CONFIDENCE["mutex_in_strings"])
 
     # 3. Dynamic results (mutexes, registry, filepaths)
     for m in dynamic_result.get("mutexes", []):
-        add_ioc("mutex", m, "dynamic", 0.85)
+        add_ioc("mutex", m, "dynamic", SOURCE_CONFIDENCE["dynamic_mutex"])
 
     for rev in dynamic_result.get("registry_events", []):
         if rev.get("target"):
-            add_ioc("registry_key", rev["target"], "dynamic", 0.8)
+            add_ioc("registry_key", rev["target"], "dynamic", SOURCE_CONFIDENCE["dynamic_registry"])
 
     for fev in dynamic_result.get("file_events", []):
         if fev.get("target"):
-            add_ioc("filepath", fev["target"], "dynamic", 0.75)
+            add_ioc("filepath", fev["target"], "dynamic", SOURCE_CONFIDENCE["dynamic_filepath"])
 
     # 4. ATT&CK techniques supported by actual static markers.  These describe
     # capability, not observed execution; runtime observations arrive from CAPE.

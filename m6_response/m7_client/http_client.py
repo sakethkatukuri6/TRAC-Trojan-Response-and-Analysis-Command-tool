@@ -5,6 +5,7 @@ import os
 from typing import Any, Dict, Optional
 import httpx
 from m6_response.m7_client.client_interface import M7ClientInterface
+from m7_core.contract.loader import get_m7_base_url
 
 
 def get_default_m6_token() -> str:
@@ -13,8 +14,10 @@ def get_default_m6_token() -> str:
 
 
 class HttpM7Client(M7ClientInterface):
-    def __init__(self, base_url: str = "http://localhost:8000", token: Optional[str] = None):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, base_url: Optional[str] = None, token: Optional[str] = None):
+        # M7_API_URL lets a deployment point M6 at a different host without editing
+        # code; otherwise the origin openapi.yaml publishes is used.
+        self.base_url = (base_url or os.getenv("M7_API_URL") or get_m7_base_url()).rstrip("/")
         self.token = token or os.getenv("M6_MODULE_TOKEN") or get_default_m6_token()
 
     @property
