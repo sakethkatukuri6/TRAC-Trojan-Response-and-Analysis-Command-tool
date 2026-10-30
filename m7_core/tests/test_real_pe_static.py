@@ -70,8 +70,10 @@ def test_pipeline_analyses_a_real_pe_end_to_end(benign_pe, isolated_vault):
     assert document["sample"]["file_type"] == "pe"
     assert document["sample"]["size_bytes"] == len(benign_pe)
     assert document["sample"]["sha256"] == FIXTURE_SHA256
-    assert document["pipeline"]["status"] == "complete"
+    assert document["pipeline"]["status"] == "report"
     assert document["pipeline"]["stages"]["static"] == "done"
+    # M8 report generation is a separate request, so the pipeline cannot claim it.
+    assert document["pipeline"]["stages"]["report"] == "pending"
     assert document["static"]["file_class"] == "pe"
     assert len(document["static"]["pe"]["sections"]) == 2
     assert len(document["static"]["pe"]["imports"]) == 3
@@ -82,7 +84,8 @@ def test_real_pe_without_a_sandbox_claims_no_runtime_evidence(benign_pe, isolate
     document = run_full_pipeline(benign_pe, original_filename="pe_fixture.exe")
 
     assert document["dynamic"] == {"status": "skipped"}
-    assert document["pipeline"]["status"] == "complete"
+    assert document["pipeline"]["status"] == "report"
+    assert document["pipeline"]["stages"]["dynamic"] == "skipped"
     assert "errors" not in document["pipeline"]
     assert document["iocs"]["beacons"] == []
     for action in document["response_actions"]:

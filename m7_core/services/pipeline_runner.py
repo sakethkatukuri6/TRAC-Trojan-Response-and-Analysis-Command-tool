@@ -36,6 +36,17 @@ EXECUTABLE_SUFFIXES = frozenset({
     ".exe", ".dll", ".sys", ".scr", ".pif", ".com", ".ocx", ".cpl", ".drv", ".efi", ".msi",
 })
 
+# Stages whose owning module returns no status field; a failure here can only be
+# reported by the orchestrator, so the message must not claim a module detail it
+# does not have.
+_STAGE_FALLBACK_ERRORS = {
+    "ingest": ("M1_INTAKE_FAILED", "M1 returned no vault record for the submitted payload."),
+    "static": ("STATIC_FAILED", "M2 static analysis returned no completed result."),
+    "iocs": ("IOCS_FAILED", "M4 indicator extraction returned no completed result."),
+    "scoring": ("SCORING_FAILED", "M5 scoring returned no completed result."),
+    "response": ("RESPONSE_FAILED", "M6 response planning returned no action list."),
+}
+
 
 class ArchiveRejected(ValueError):
     """An uploaded archive could not be reduced to exactly one safe payload."""
@@ -240,14 +251,39 @@ def run_full_pipeline(
     planner = ResponsePlanner(mode="dry_run")
     response_actions = planner.plan_response(partial_doc)
 
+    # Each stage status is read back from what the owning module actually returned.
+    # A module that reports no status is recorded as failed, never assumed done.
+    stages: Dict[str, str] = {
+        "ingest": "done" if sample_rec.get("vault_id") else "failed",
+        "static": static_res.get("status", "failed"),
+        "dynamic": dynamic_res.get("status", "failed"),
+        "iocs": iocs_res.get("status", "failed"),
+        "scoring": (scoring_res.get("detections") or {}).get("status", "failed"),
+        "response": "done" if isinstance(response_actions, list) else "failed",
+        # Report generation is M8's own request against the stored document; this
+        # pipeline never produces a report, so it cannot claim one.
+        "report": "pending",
+    }
+
     pipeline_errors: list[Dict[str, Any]] = []
-    if dynamic_res.get("status") == "failed":
+    for stage, stage_status in stages.items():
+        if stage_status != "failed":
+            continue
+        if stage == "dynamic":
+            code = "SANDBOX_FAILED"
+            message = sandbox_error or "The configured sandbox did not return a result."
+        else:
+            code, message = _STAGE_FALLBACK_ERRORS[stage]
         pipeline_errors.append({
-            "stage": "dynamic",
-            "code": "SANDBOX_FAILED",
-            "message": (sandbox_error or "The configured sandbox did not return a result.")[:500],
+            "stage": stage,
+            "code": code,
+            "message": message[:500],
             "at": datetime.now(timezone.utc).isoformat(),
         })
+
+    # "report" is the state the state machine reaches once response.done is emitted;
+    # only M8's report.done moves an analysis to complete.
+    pipeline_status = "failed" if "failed" in stages.values() else "report"
 
     # 7. Assemble Full Contract Document
     doc: Dict[str, Any] = {
@@ -255,16 +291,8 @@ def run_full_pipeline(
         "analysis_id": assigned_aid,
         "sample": sample_rec,
         "pipeline": {
-            "status": "failed" if dynamic_res.get("status") == "failed" else "complete",
-            "stages": {
-                "ingest": "done",
-                "static": "done",
-                "dynamic": dynamic_res.get("status", "failed"),
-                "iocs": "done",
-                "scoring": "done",
-                "response": "done",
-                "report": "done",
-            },
+            "status": pipeline_status,
+            "stages": stages,
         },
         "static": static_res,
         "dynamic": clean_dynamic,

@@ -247,7 +247,10 @@ class UploadRouteTests(unittest.TestCase):
         stored = view.json()["document"]
         self.assertEqual(stored["analysis_id"], analysis_id)
         self.assertEqual(stored["sample"]["sha256"], res.json()["document"]["sample"]["sha256"])
-        self.assertEqual(stored["pipeline"]["status"], "complete")
+        # The console runs M1-M6; M8 report generation is a separate request, so the
+        # stored analysis must not claim a finished report.
+        self.assertEqual(stored["pipeline"]["status"], "report")
+        self.assertEqual(stored["pipeline"]["stages"]["report"], "pending")
 
     def test_response_actions_stay_dry_run_proposals(self):
         res = self.client.post(

@@ -110,7 +110,9 @@ class AnalysisService:
         pipeline = doc.get("pipeline") or {}
         self.repo.update_pipeline(
             analysis_id=analysis_id,
-            status=pipeline.get("status", "complete"),
+            # A document that declares no state stays at intake; "complete" would be
+            # a terminal claim M7 never observed.
+            status=pipeline.get("status") or "received",
             stages=pipeline.get("stages"),
         )
 
