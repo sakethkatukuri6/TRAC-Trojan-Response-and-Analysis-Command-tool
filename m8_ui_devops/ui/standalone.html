@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TRAC // Threat Response & Analysis Command Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["Roboto", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+            mono: ["'Roboto Mono'", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #06090e;
+      background-image:
+        linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+      background-size: 32px 32px;
+      color: #e2e8f0;
+      font-family: 'Roboto', -apple-system, sans-serif;
+    }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #080c14; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 2px; }
+
+    @keyframes layerReveal {
+      0% { opacity: 0; transform: translateY(14px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    .anim-layer-1 { animation: layerReveal 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    .anim-layer-2 { opacity: 0; animation: layerReveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.08s forwards; }
+    .anim-layer-3 { opacity: 0; animation: layerReveal 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.16s forwards; }
+    .anim-layer-4 { opacity: 0; animation: layerReveal 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.24s forwards; }
+    .anim-layer-5 { opacity: 0; animation: layerReveal 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.32s forwards; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // Labels are supplied by the server (M8 evidence view model) so that the
+    // console and the generated reports always agree on wording.
+    const EMPTY = {
+      static_evidence: {
+        label: "Static evidence", entropy: null, packers: [], strings: {}, pe: {},
+        yara_matches: [], embedded_urls: [], sample: {},
+      },
+      capabilities: { label: "Static capability indicators", techniques: [], detections: [], intel_hits: [] },
+      sandbox: { status: "unknown", label: "Sandbox not run", observed: false, detail: "", error: null, telemetry: null },
+      iocs: { label: "Defanged indicators", items: [], beacons: [] },
+      verdict: {}, score: {}, response_actions: [], pipeline: { status: "unknown", stages: {} },
+    };
+
+    function Row({ label, value, mono }) {
+      return (
+        <div className="flex justify-between gap-4 py-1 border-b border-[#1c2636]/40">
+          <span className="text-slate-500 shrink-0">{label}</span>
+          <span className={`text-right break-all ${mono ? "font-mono" : ""}`}>{value}</span>
+        </div>
+      );
+    }
+
+    function Panel({ title, subtitle, children, accent }) {
+      return (
+        <div className="bg-[#0b1017] p-5 rounded border border-[#1c2636] space-y-3">
+          <div className="flex items-baseline justify-between gap-3 border-b border-[#1c2636] pb-2">
+            <span className={`text-xs font-bold uppercase tracking-wider ${accent || "text-slate-300"}`}>{title}</span>
+            {subtitle ? <span className="text-[11px] font-mono text-slate-500 text-right">{subtitle}</span> : null}
+          </div>
+          {children}
+        </div>
+      );
+    }
+
+    function App() {
+      const [summaries, setSummaries] = useState([]);
+      const [views, setViews] = useState({});
+      const [selectedId, setSelectedId] = useState(null);
+      const [activeTab, setActiveTab] = useState("overview");
+      const [role, setRole] = useState("analyst");
+      const [toast, setToast] = useState(null);
+      const [isUploadOpen, setIsUploadOpen] = useState(false);
+      const [uploadLoading, setUploadLoading] = useState(false);
+      const [dragOver, setDragOver] = useState(false);
+      const [selectedFile, setSelectedFile] = useState(null);
+      const [apiOnline, setApiOnline] = useState(false);
+      const [bootError, setBootError] = useState(null);
+      const fileInputRef = useRef(null);
+
+      const active = views[selectedId] || null;
+      const doc = active ? active.document : null;
+      const vm = active ? active.presentation : EMPTY;
+      const staticEvidence = vm.static_evidence || EMPTY.static_evidence;
+      const sandbox = vm.sandbox || EMPTY.sandbox;
+      const capabilities = vm.capabilities || EMPTY.capabilities;
+      const iocsView = vm.iocs || EMPTY.iocs;
+      const verdict = vm.verdict || {};
+      const score = vm.score || {};
+      const sample = staticEvidence.sample || {};
+
+      const showToast = (msg) => {
+        setToast(msg);
+        setTimeout(() => setToast(null), 4000);
+      };
+
+      const copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text);
+        showToast("Copied: " + String(text).slice(0, 16) + "...");
+      };
+
+      const loadAnalysis = async (id) => {
+        try {
+          const res = await fetch(`/api/analyses/${id}/view`);
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const payload = await res.json();
+          setViews(prev => ({ ...prev, [id]: payload }));
+          setApiOnline(true);
+          return payload;
+        } catch (err) {
+          setBootError("Could not load analysis " + id + ": " + err.message);
+          return null;
+        }
+      };
+
+      useEffect(() => {
+        (async () => {
+          try {
+            const res = await fetch("/api/analyses");
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            const list = await res.json();
+            setSummaries(list);
+            setApiOnline(true);
+            if (list.length) {
+              setSelectedId(list[0].analysis_id);
+              await loadAnalysis(list[0].analysis_id);
+            }
+          } catch (err) {
+            setApiOnline(false);
+            setBootError("M7 API is unreachable (" + err.message + "). No analysis can be shown.");
+          }
+        })();
+      }, []);
+
+      const handleFileSelected = (file) => {
+        if (!file) return;
+        if (file.size > 100 * 1024 * 1024) {
+          showToast("Error: File exceeds maximum allowed 100 MiB limit.");
+          return;
+        }
+        setSelectedFile(file);
+      };
+
+      const handleUploadSubmit = async () => {
+        if (!selectedFile) return;
+        setUploadLoading(true);
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+
+        try {
+          const response = await fetch("/api/samples/upload", { method: "POST", body: formData });
+          const raw = await response.text();
+          let payload = null;
+          try { payload = JSON.parse(raw); } catch (e) { payload = null; }
+
+          if (!response.ok) {
+            const detail = payload && payload.detail ? JSON.stringify(payload.detail) : raw.slice(0, 300);
+            showToast("Upload rejected: " + detail);
+            return;
+          }
+
+          const id = payload.document.analysis_id;
+          setViews(prev => ({ ...prev, [id]: payload }));
+          setSummaries(prev => [{
+            analysis_id: id,
+            original_name: payload.document.sample.original_name,
+            verdict: payload.document.verdict.label,
+            severity: payload.document.verdict.severity,
+            score: payload.document.score.value,
+            status: payload.document.pipeline.status,
+          }, ...prev.filter(s => s.analysis_id !== id)]);
+          setSelectedId(id);
+          setIsUploadOpen(false);
+          setSelectedFile(null);
+          setApiOnline(true);
+          showToast("Analysed " + payload.document.sample.original_name + " (" + payload.presentation.sandbox.label + ")");
+        } catch (err) {
+          showToast("Upload failed: " + err.message);
+        } finally {
+          setUploadLoading(false);
+        }
+      };
+
+      const verdictLabel = verdict.label || "unknown";
+      const scoreValue = typeof score.value === "number" ? score.value : null;
+
+      const tabs = [
+        { id: "overview", label: "Overview" },
+        { id: "static", label: staticEvidence.label },
+        { id: "sandbox", label: sandbox.label },
+        { id: "iocs", label: `Indicators (${(iocsView.items || []).length})` },
+        { id: "attack", label: "ATT&CK" },
+        { id: "response", label: `Response (${(vm.response_actions || []).length})` },
+        { id: "audit", label: "Contract JSON" },
+      ];
+
+      return (
+        <div className="min-h-screen bg-[#06090e] text-slate-100 flex flex-col font-sans selection:bg-[#1565c0]">
+          {/* Top Bar - Layer 1 */}
+          <header className="bg-[#080c14] border-b border-[#1c2636] sticky top-0 z-40 px-6 py-2.5 flex items-center justify-between anim-layer-1">
+            <div className="flex items-center gap-3">
+              <span className="w-2.5 h-2.5 bg-[#b71c1c] border border-[#ef5350] rounded-sm transform rotate-45 inline-block" />
+              <span className="font-mono font-black text-slate-100 text-sm tracking-widest uppercase">
+                TRAC <span className="text-slate-600 font-light">//</span> COMMAND
+              </span>
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#2d0a0a] text-red-400 border border-[#b71c1c] font-bold">
+                TLP:AMBER
+              </span>
+              <span className="text-[11px] font-mono text-slate-500">CONTRACT V1.0.0</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#0b1017] border border-[#1c2636] text-xs font-mono">
+                <span className={`w-2 h-2 rounded-full ${apiOnline ? "bg-emerald-500" : "bg-red-500"}`} />
+                <span className={apiOnline ? "text-emerald-400 font-semibold" : "text-red-400 font-semibold"}>
+                  M7 {apiOnline ? "LIVE" : "OFFLINE"}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 bg-[#0b1017] px-2.5 py-1 rounded border border-[#1c2636] text-xs font-mono">
+                <span className="text-slate-500">ROLE:</span>
+                <select value={role} onChange={e => setRole(e.target.value)} className="bg-transparent text-slate-200 font-semibold cursor-pointer focus:outline-none">
+                  <option value="analyst" className="bg-[#0b1017]">Analyst (Tier 2)</option>
+                  <option value="approver" className="bg-[#0b1017]">Approver / Admin</option>
+                  <option value="auditor" className="bg-[#0b1017]">Compliance Auditor</option>
+                </select>
+              </div>
+              <button
+                onClick={() => setIsUploadOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1 rounded bg-[#1565c0] hover:bg-[#1976d2] text-white text-xs font-mono font-bold transition shadow-sm cursor-pointer"
+              >
+                <span>+ Upload Sample</span>
+              </button>
+            </div>
+          </header>
+
+          <main className="flex-1 max-w-[1440px] w-full mx-auto p-4 lg:p-6 space-y-4">
+            {/* Sample Selector - Layer 2 */}
+            <div className="bg-[#0b1017] border border-[#1c2636] rounded p-2.5 flex items-center justify-between text-xs font-mono anim-layer-2">
+              <div className="flex items-center gap-2 overflow-x-auto">
+                <span className="text-slate-500 font-bold text-[10px] uppercase shrink-0">Active Target:</span>
+                <div className="flex gap-1.5">
+                  {summaries.map(s => (
+                    <button
+                      key={s.analysis_id}
+                      onClick={() => { setSelectedId(s.analysis_id); loadAnalysis(s.analysis_id); }}
+                      className={`px-3 py-1.5 rounded flex items-center gap-2 border transition shrink-0 ${
+                        s.analysis_id === selectedId
+                          ? "bg-[#121924] border-[#1565c0] text-white font-bold shadow-sm"
+                          : "bg-[#080c14] border-[#1c2636] text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${s.verdict === 'malicious' ? 'bg-[#c62828]' : (s.verdict === 'benign' ? 'bg-[#2e7d32]' : 'bg-[#bf8c00]')}`} />
+                      <span>{s.original_name || s.analysis_id.slice(0, 8)}</span>
+                      <span className="text-[10px] opacity-60">({s.verdict || "unknown"})</span>
+                    </button>
+                  ))}
+                  {!summaries.length && (
+                    <span className="text-slate-600 px-2 py-1.5">No analyses recorded yet.</span>
+                  )}
+                  <button
+                    onClick={() => setIsUploadOpen(true)}
+                    className="px-2.5 py-1.5 rounded flex items-center gap-1 border border-dashed border-[#1565c0] text-[#42a5f5] hover:bg-[#121924] transition font-mono text-[11px] cursor-pointer shrink-0"
+                  >
+                    <span>+ Ingest File</span>
+                  </button>
+                </div>
+              </div>
+              <div className="text-slate-500 text-xs shrink-0 hidden md:block">
+                Vault ID: <span className="text-slate-400 font-semibold">{sample.vault_id ? String(sample.vault_id).slice(0, 13) + "..." : "n/a"}</span>
+              </div>
+            </div>
+
+            {bootError && (
+              <div className="bg-[#2d0a0a] border border-[#b71c1c] text-red-300 px-4 py-2.5 rounded text-xs font-mono anim-layer-2">
+                [ERROR] {bootError}
+              </div>
+            )}
+
+            {!doc ? (
+              <div className="bg-[#0b1017] border border-[#1c2636] rounded p-8 text-center text-xs font-mono text-slate-500 anim-layer-3">
+                No analysis selected. Upload a sample to run the real pipeline.
+              </div>
+            ) : (
+              <>
+                {/* Verdict Hero Banner - Layer 3 */}
+                <div className="bg-[#0b1017] border border-[#1c2636] rounded p-5 shadow-lg anim-layer-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                    <div className="lg:col-span-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-0.5 rounded text-xs font-black font-mono uppercase tracking-wider ${
+                          verdictLabel === 'malicious' ? 'bg-[#b71c1c] text-white border border-[#d32f2f]' : (verdictLabel === 'benign' ? 'bg-[#1b5e20] text-white border border-[#2e7d32]' : 'bg-[#78350f] text-amber-200 border border-[#b45309]')
+                        }`}>
+                          {verdictLabel}
+                        </span>
+                        <span className="px-2 py-0.5 rounded text-[11px] font-bold font-mono uppercase bg-[#2d1204] text-orange-400 border border-[#bf360c]">
+                          {verdict.severity || "unknown"}
+                        </span>
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-slate-500 uppercase font-mono">Classification Family</div>
+                        <div className="text-sm font-bold font-mono text-slate-100">{verdict.family_guess || "unknown"}</div>
+                        <div className="text-xs text-slate-400 font-mono">
+                          Confidence: <strong>{Math.round((verdict.confidence || 0) * 100)}%</strong>
+                        </div>
+                      </div>
+                      {verdict.behavior_tags && verdict.behavior_tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {verdict.behavior_tags.map(t => (
+                            <span key={t} className="text-[10px] font-mono px-1.5 py-0.5 bg-[#121924] text-slate-300 rounded border border-[#1c2636]">
+                              #{t}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="lg:col-span-5 border-l border-[#1c2636] pl-6 space-y-2">
+                      <div className="text-xs font-bold text-slate-300 font-mono uppercase tracking-wider">
+                        Evidence Rationale
+                      </div>
+                      <ul className="text-xs space-y-1 text-slate-200">
+                        {(verdict.explanation || []).map((e, idx) => (
+                          <li key={idx} className="flex items-start gap-2">
+                            <span className="text-red-400 font-mono font-bold select-none">::</span>
+                            <span>{e}</span>
+                          </li>
+                        ))}
+                        {!(verdict.explanation || []).length && (
+                          <li className="text-slate-500">No rationale recorded.</li>
+                        )}
+                      </ul>
+                      <div className="pt-2 flex gap-2">
+                        <a
+                          href={`/api/reports/${doc.analysis_id}/pdf`}
+                          target="_blank"
+                          className="px-3 py-1.5 rounded text-xs font-mono font-bold bg-[#1565c0] hover:bg-[#1976d2] text-white border border-[#1e88e5] transition"
+                        >
+                          [EXPORT PDF REPORT]
+                        </a>
+                        <a
+                          href={`/api/reports/${doc.analysis_id}/html`}
+                          target="_blank"
+                          className="px-3 py-1.5 rounded text-xs font-mono font-semibold bg-[#121924] hover:bg-[#1c2636] text-slate-200 border border-[#1c2636] transition"
+                        >
+                          [STANDALONE HTML]
+                        </a>
+                      </div>
+                    </div>
+
+                    <div className="lg:col-span-3 bg-[#080c14] p-4 rounded border border-[#1c2636]">
+                      <div className="flex justify-between items-baseline font-mono">
+                        <span className="text-xs font-bold uppercase text-slate-400">Threat Score</span>
+                        <span className="text-2xl font-black text-white">
+                          {scoreValue === null ? "N/A" : scoreValue} <span className="text-xs text-slate-500 font-normal">/ 100</span>
+                        </span>
+                      </div>
+                      <div className="w-full bg-[#121924] rounded-full h-2 mt-2 overflow-hidden border border-[#1c2636]">
+                        <div
+                          className={`h-full ${scoreValue !== null && scoreValue >= 60 ? 'bg-[#c62828]' : 'bg-[#2e7d32]'}`}
+                          style={{ width: `${scoreValue === null ? 0 : scoreValue}%` }}
+                        />
+                      </div>
+                      <div className="text-[11px] text-slate-400 font-mono mt-2 text-right">Method: {score.method || "n/a"}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tab Bar - Layer 4 */}
+                <div className="border-b border-[#1c2636] flex gap-1 overflow-x-auto text-xs font-mono font-bold uppercase anim-layer-4">
+                  {tabs.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setActiveTab(t.id)}
+                      className={`px-4 py-2.5 border-b-2 transition whitespace-nowrap ${
+                        activeTab === t.id
+                          ? "border-[#1565c0] text-sky-400 bg-[#0b1017]"
+                          : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-[#0b1017]/40"
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Tab Contents - Layer 5 */}
+                <div className="anim-layer-5 space-y-4">
+                  {activeTab === "overview" && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <Panel title="Sample Cryptographic Provenance" subtitle={vm.pipeline.status}>
+                        <Row label="File Name" value={sample.original_name || "n/a"} />
+                        <Row label="Size" value={`${sample.size_bytes !== undefined ? sample.size_bytes : "n/a"} bytes`} />
+                        <Row label="Type" value={String(sample.file_type || "n/a").toUpperCase()} />
+                        <Row label="Received" value={sample.received_at || "n/a"} mono />
+                        <Row label="AV Result" value={String(sample.clamav_result || "not_run").toUpperCase()} />
+                        <div className="pt-2">
+                          <div className="flex justify-between text-slate-500 mb-1">
+                            <span>SHA-256:</span>
+                            <button onClick={() => copyToClipboard(sample.sha256 || "")} className="text-sky-400 font-bold hover:underline">[COPY]</button>
+                          </div>
+                          <div className="p-2 bg-[#080c14] rounded text-sky-400 text-xs break-all border border-[#1c2636] select-all">{sample.sha256 || "n/a"}</div>
+                        </div>
+                        <div>
+                          <div className="flex justify-between text-slate-500 mb-1">
+                            <span>MD5:</span>
+                            <button onClick={() => copyToClipboard(sample.md5 || "")} className="text-sky-400 font-bold hover:underline">[COPY]</button>
+                          </div>
+                          <div className="p-1.5 bg-[#080c14] rounded text-slate-300 text-xs border border-[#1c2636] select-all">{sample.md5 || "n/a"}</div>
+                        </div>
+                        {sample.sha1 && (
+                          <div>
+                            <div className="flex justify-between text-slate-500 mb-1">
+                              <span>SHA-1:</span>
+                              <button onClick={() => copyToClipboard(sample.sha1)} className="text-sky-400 font-bold hover:underline">[COPY]</button>
+                            </div>
+                            <div className="p-1.5 bg-[#080c14] rounded text-slate-300 text-xs border border-[#1c2636] select-all">{sample.sha1}</div>
+                          </div>
+                        )}
+                      </Panel>
+
+                      <Panel title="Threat Score Decomposition" subtitle={score.method}>
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-slate-500 border-b border-[#1c2636] text-left">
+                              <th className="pb-1.5">Component</th>
+                              <th className="pb-1.5 text-right">Weight</th>
+                              <th className="pb-1.5 text-right">Contribution</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#1c2636]/60">
+                            {(score.components || []).map((c, i) => (
+                              <tr key={i}>
+                                <td className="py-2 text-slate-300">{c.name}</td>
+                                <td className="py-2 text-right text-slate-500">{c.weight}</td>
+                                <td className="py-2 text-right text-sky-400 font-bold">+{c.contribution}</td>
+                              </tr>
+                            ))}
+                            {!(score.components || []).length && (
+                              <tr><td colSpan="3" className="py-2 text-slate-500">No score components recorded.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                        <div className="p-3 bg-[#080c14] rounded border border-[#1c2636] text-[11px] text-slate-400">
+                          Component contributions are the score; no hidden baseline is added.
+                        </div>
+                      </Panel>
+                    </div>
+                  )}
+
+                  {activeTab === "static" && (
+                    <div className="space-y-4">
+                      <Panel title={staticEvidence.label} subtitle="inferred from bytes, imports and strings">
+                        <div className="text-[11px] text-slate-400 font-mono">
+                          These are static indicators. The sample was not executed to obtain them, so they describe
+                          capability, not observed behaviour.
+                        </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <Row label="File Class" value={String(staticEvidence.file_class || "n/a").toUpperCase()} />
+                            <Row label="Static Status" value={staticEvidence.status || "n/a"} />
+                            <Row label="Entropy" value={staticEvidence.entropy !== null && staticEvidence.entropy !== undefined ? `${staticEvidence.entropy} / 8.00` : "n/a"} />
+                            <Row label="Packer Signals" value={(staticEvidence.packers || []).join(", ") || "None detected"} />
+                            <Row label="Signed" value={staticEvidence.pe && staticEvidence.pe.signed !== undefined ? String(staticEvidence.pe.signed) : "n/a"} />
+                            <Row label="Is DLL" value={staticEvidence.pe && staticEvidence.pe.is_dll !== undefined ? String(staticEvidence.pe.is_dll) : "n/a"} />
+                            <Row label="Imphash" value={(staticEvidence.pe && staticEvidence.pe.imphash) || "n/a"} mono />
+                            <Row label="Compile Time" value={(staticEvidence.pe && staticEvidence.pe.compile_time) || "n/a"} mono />
+                          </div>
+                          <div className="space-y-2">
+                            <div className="text-[11px] uppercase text-slate-500 font-bold">PE Sections</div>
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-slate-500 border-b border-[#1c2636] text-left">
+                                  <th className="pb-1">Name</th>
+                                  <th className="pb-1 text-right">Entropy</th>
+                                  <th className="pb-1 text-right">Raw</th>
+                                  <th className="pb-1 text-right">Virtual</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-[#1c2636]/60">
+                                {((staticEvidence.pe && staticEvidence.pe.sections) || []).map((s, i) => (
+                                  <tr key={i}>
+                                    <td className="py-1 text-slate-300">{s.name}</td>
+                                    <td className="py-1 text-right text-slate-400">{s.entropy}</td>
+                                    <td className="py-1 text-right text-slate-500">{s.raw_size !== undefined ? s.raw_size : "-"}</td>
+                                    <td className="py-1 text-right text-slate-500">{s.virtual_size !== undefined ? s.virtual_size : "-"}</td>
+                                  </tr>
+                                ))}
+                                {!((staticEvidence.pe && staticEvidence.pe.sections) || []).length && (
+                                  <tr><td colSpan="4" className="py-1 text-slate-500">No PE section table available.</td></tr>
+                                )}
+                              </tbody>
+                            </table>
+                            <div className="text-[11px] uppercase text-slate-500 font-bold pt-2">Imports</div>
+                            <div className="p-2 bg-[#080c14] rounded border border-[#1c2636] text-sky-400 max-h-40 overflow-y-auto select-all">
+                              {((staticEvidence.pe && staticEvidence.pe.imports) || []).map((imp, i) => (
+                                <div key={i}>{imp}</div>
+                              ))}
+                              {!((staticEvidence.pe && staticEvidence.pe.imports) || []).length && (
+                                <div className="text-slate-500">No imports parsed.</div>
+                              )}
+                            </div>
+                            {((staticEvidence.pe && staticEvidence.pe.exports) || []).length > 0 && (
+                              <>
+                                <div className="text-[11px] uppercase text-slate-500 font-bold pt-2">Exports</div>
+                                <div className="p-2 bg-[#080c14] rounded border border-[#1c2636] text-sky-400 max-h-32 overflow-y-auto select-all">
+                                  {staticEvidence.pe.exports.map((ex, i) => <div key={i}>{ex}</div>)}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          <div className="space-y-2">
+                            <div className="text-[11px] uppercase text-slate-500 font-bold">
+                              Strings <span className="text-slate-600">({(staticEvidence.strings && staticEvidence.strings.count) || 0} total)</span>
+                            </div>
+                            <div className="p-2 bg-[#080c14] rounded border border-[#1c2636] text-slate-300 max-h-40 overflow-y-auto select-all">
+                              {((staticEvidence.strings && staticEvidence.strings.interesting) || []).map((s, i) => (
+                                <div key={i} className="break-all">{s}</div>
+                              ))}
+                              {!((staticEvidence.strings && staticEvidence.strings.interesting) || []).length && (
+                                <div className="text-slate-500">No interesting strings extracted.</div>
+                              )}
+                            </div>
+                            <div className="text-[11px] uppercase text-slate-500 font-bold pt-2">Embedded URLs (defanged)</div>
+                            <div className="p-2 bg-[#080c14] rounded border border-[#1c2636] text-sky-400 max-h-24 overflow-y-auto select-all">
+                              {(staticEvidence.embedded_urls || []).map((u, i) => <div key={i} className="break-all">{u}</div>)}
+                              {!(staticEvidence.embedded_urls || []).length && <div className="text-slate-500">None found.</div>}
+                            </div>
+                            <div className="text-[11px] uppercase text-slate-500 font-bold pt-2">YARA Matches</div>
+                            <div className="p-2 bg-[#080c14] rounded border border-[#1c2636] text-amber-300">
+                              {(staticEvidence.yara_matches || []).map((y, i) => <div key={i}>{y.rule}</div>)}
+                              {!(staticEvidence.yara_matches || []).length && <div className="text-slate-500">No rule hits.</div>}
+                            </div>
+                          </div>
+                        </div>
+                      </Panel>
+
+                      <Panel title="Defanged Indicators From Static Evidence" subtitle={`${(iocsView.items || []).filter(i => i.source === "static_strings").length} entries`}>
+                        <table className="w-full text-xs font-mono">
+                          <thead>
+                            <tr className="text-slate-400 border-b border-[#1c2636] text-left">
+                              <th className="p-2">Type</th>
+                              <th className="p-2">Defanged Value</th>
+                              <th className="p-2">Source</th>
+                              <th className="p-2 text-right">Confidence</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#1c2636]/60">
+                            {(iocsView.items || []).filter(i => i.source === "static_strings").map((item, idx) => (
+                              <tr key={idx}>
+                                <td className="p-2 uppercase font-bold text-slate-300">{item.type}</td>
+                                <td className="p-2 text-sky-400 select-all break-all">{item.value}</td>
+                                <td className="p-2 text-slate-400">{item.source}</td>
+                                <td className="p-2 text-right font-bold text-slate-200">{Math.round(item.confidence * 100)}%</td>
+                              </tr>
+                            ))}
+                            {!(iocsView.items || []).filter(i => i.source === "static_strings").length && (
+                              <tr><td colSpan="4" className="p-2 text-slate-500">No static indicators extracted.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </Panel>
+                    </div>
+                  )}
+
+                  {activeTab === "sandbox" && (
+                    <div className="space-y-4">
+                      <Panel
+                        title={sandbox.label}
+                        subtitle={`status: ${sandbox.status}`}
+                        accent={sandbox.observed ? "text-emerald-400" : "text-amber-400"}
+                      >
+                        {sandbox.observed ? (
+                          <>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs font-mono">
+                              <Row label="Engine" value={String((sandbox.telemetry.sandbox || {}).engine || "n/a").toUpperCase()} />
+                              <Row label="Guest OS" value={(sandbox.telemetry.sandbox || {}).guest_os || "n/a"} />
+                              <Row label="Run ID" value={(sandbox.telemetry.sandbox || {}).run_id || "n/a"} mono />
+                              <Row label="Duration" value={`${(sandbox.telemetry.sandbox || {}).duration_s || 0}s`} />
+                              <Row label="Network Mode" value={String((sandbox.telemetry.sandbox || {}).network_mode || "n/a").toUpperCase()} />
+                              <Row label="Snapshot Reverted" value={String((sandbox.telemetry.sandbox || {}).reverted)} />
+                            </div>
+                            <div className="text-[11px] uppercase text-slate-500 font-bold pt-2">Spawned Processes (observed)</div>
+                            <div className="space-y-1">
+                              {(sandbox.telemetry.process_tree || []).map((p, i) => (
+                                <div key={i} className="p-2.5 bg-[#080c14] rounded border border-[#1c2636]">
+                                  PID {p.pid} (PPID {p.ppid !== undefined ? p.ppid : "-"}): <strong>{p.name}</strong>{" "}
+                                  {p.command_line ? `(${p.command_line})` : ""}
+                                </div>
+                              ))}
+                              {!(sandbox.telemetry.process_tree || []).length && (
+                                <div className="text-slate-500">The sandbox observed no spawned processes.</div>
+                              )}
+                            </div>
+                            <div className="text-[11px] uppercase text-slate-500 font-bold pt-2">File & Registry Activity (observed)</div>
+                            <div className="space-y-1">
+                              {(sandbox.telemetry.file_events || []).map((e, i) => (
+                                <div key={"f" + i} className="p-2 bg-[#080c14] rounded border border-[#1c2636]">[File {e.action}] {e.target}</div>
+                              ))}
+                              {(sandbox.telemetry.registry_events || []).map((e, i) => (
+                                <div key={"r" + i} className="p-2 bg-[#080c14] rounded border border-[#1c2636]">[Registry {e.action}] {e.target}</div>
+                              ))}
+                              {!(sandbox.telemetry.file_events || []).length && !(sandbox.telemetry.registry_events || []).length && (
+                                <div className="text-slate-500">No file or registry activity was observed.</div>
+                              )}
+                            </div>
+                            {(sandbox.telemetry.mutexes || []).length > 0 && (
+                              <>
+                                <div className="text-[11px] uppercase text-slate-500 font-bold pt-2">Mutexes (observed)</div>
+                                <div className="p-2 bg-[#080c14] rounded border border-[#1c2636]">
+                                  {sandbox.telemetry.mutexes.map((m, i) => <div key={i}>{m}</div>)}
+                                </div>
+                              </>
+                            )}
+                            {(sandbox.telemetry.dropped_files || []).length > 0 && (
+                              <>
+                                <div className="text-[11px] uppercase text-slate-500 font-bold pt-2">Dropped Files (observed)</div>
+                                <div className="p-2 bg-[#080c14] rounded border border-[#1c2636]">
+                                  {sandbox.telemetry.dropped_files.map((f, i) => (
+                                    <div key={i} className="break-all">{f.name || "unnamed"} - {f.sha256}</div>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                            <div className="text-[11px] uppercase text-slate-500 font-bold pt-2">Network Summary (observed)</div>
+                            <div className="p-2 bg-[#080c14] rounded border border-[#1c2636]">
+                              DNS: {((sandbox.telemetry.network_summary || {}).dns_queries) || 0} | HTTP: {((sandbox.telemetry.network_summary || {}).http_requests) || 0} | TCP: {((sandbox.telemetry.network_summary || {}).tcp_connections) || 0}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-xs font-mono text-slate-300">{sandbox.detail}</div>
+                            {sandbox.error && (
+                              <div className="p-3 bg-[#2d0a0a] rounded border border-[#b71c1c] text-red-300 text-xs font-mono break-all">
+                                Operator error: {sandbox.error}
+                              </div>
+                            )}
+                            <div className="text-[11px] text-slate-500 font-mono">
+                              No process tree, file drop, registry change, mutex, beacon or timing is reported for this
+                              analysis because none was observed.
+                            </div>
+                          </>
+                        )}
+                      </Panel>
+
+                      <Panel title="C2 Periodic Beaconing" subtitle={sandbox.observed ? "observed" : "not observed"}>
+                        {(iocsView.beacons || []).length ? (
+                          (iocsView.beacons || []).map((b, i) => (
+                            <div key={i} className="p-3 bg-[#080c14] rounded border border-[#b71c1c] text-red-300">
+                              Target: <strong>{b.destination}</strong> | Interval: {b.interval_s}s | Jitter: {b.jitter * 100}% | Pulse: {b.count}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-xs font-mono text-slate-400">
+                            No beacon telemetry was observed for this analysis. Static strings cannot establish
+                            beacon frequency or jitter.
+                          </div>
+                        )}
+                      </Panel>
+                    </div>
+                  )}
+
+                  {activeTab === "iocs" && (
+                    <Panel title="Defanged Indicators of Compromise" subtitle={`${(iocsView.items || []).length} extracted`}>
+                      <table className="w-full text-xs font-mono">
+                        <thead>
+                          <tr className="text-slate-400 border-b border-[#1c2636] text-left">
+                            <th className="p-2">Type</th>
+                            <th className="p-2">Defanged Value</th>
+                            <th className="p-2">Source</th>
+                            <th className="p-2 text-right">Confidence</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#1c2636]/60">
+                          {(iocsView.items || []).map((item, idx) => (
+                            <tr key={idx}>
+                              <td className="p-2 uppercase font-bold text-slate-300">{item.type}</td>
+                              <td className="p-2 text-sky-400 select-all break-all">{item.value}</td>
+                              <td className="p-2 text-slate-400">{item.source}</td>
+                              <td className="p-2 text-right font-bold text-slate-200">{Math.round(item.confidence * 100)}%</td>
+                            </tr>
+                          ))}
+                          {!(iocsView.items || []).length && (
+                            <tr><td colSpan="4" className="p-2 text-slate-500">No indicators extracted.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </Panel>
+                  )}
+
+                  {activeTab === "attack" && (
+                    <div className="space-y-4">
+                      <Panel title={capabilities.label} subtitle="not observed execution">
+                        <div className="text-[11px] text-slate-400 font-mono">
+                          Each technique is inferred from static markers in the submitted bytes. Nothing here claims the
+                          technique was executed.
+                        </div>
+                        {(capabilities.techniques || []).map((a, i) => (
+                          <div key={i} className="p-2.5 bg-[#080c14] rounded border border-[#1c2636] flex justify-between gap-4">
+                            <span className="font-bold text-amber-400 whitespace-nowrap">{a.id} ({a.tactic})</span>
+                            <span className="text-slate-300 text-right">{a.evidence}</span>
+                          </div>
+                        ))}
+                        {!(capabilities.techniques || []).length && (
+                          <div className="text-slate-500 text-xs font-mono">No capability markers matched.</div>
+                        )}
+                      </Panel>
+
+                      <Panel title="Detection Rules" subtitle={`${(capabilities.detections || []).length} matched`}>
+                        <table className="w-full text-xs font-mono">
+                          <thead>
+                            <tr className="text-slate-400 border-b border-[#1c2636] text-left">
+                              <th className="p-2">Rule</th>
+                              <th className="p-2">Kind</th>
+                              <th className="p-2">Severity</th>
+                              <th className="p-2">Description</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#1c2636]/60">
+                            {(capabilities.detections || []).map((d, i) => (
+                              <tr key={i}>
+                                <td className="p-2 font-bold text-slate-200">{d.rule_id}</td>
+                                <td className="p-2 text-slate-400">{d.kind}</td>
+                                <td className="p-2 uppercase text-amber-300">{d.severity}</td>
+                                <td className="p-2 text-slate-300">{d.description}</td>
+                              </tr>
+                            ))}
+                            {!(capabilities.detections || []).length && (
+                              <tr><td colSpan="4" className="p-2 text-slate-500">No detection rules matched.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                        <div className="text-[11px] uppercase text-slate-500 font-bold pt-2">Threat Intelligence Hits</div>
+                        <div className="p-2 bg-[#080c14] rounded border border-[#1c2636] text-xs font-mono text-slate-400">
+                          {(capabilities.intel_hits || []).length
+                            ? (capabilities.intel_hits || []).map((h, i) => (
+                                <div key={i}>{h.provider}: {h.indicator} ({h.result})</div>
+                              ))
+                            : "No threat-intelligence lookup was performed or no hit was returned."}
+                        </div>
+                      </Panel>
+                    </div>
+                  )}
+
+                  {activeTab === "response" && (
+                    <Panel title="Incident Containment Actions (M6 Engine)" subtitle="dry-run proposals">
+                      <div className="text-[11px] text-slate-400 font-mono">
+                        These are proposals only. Nothing is executed by this console: destructive actions stay in
+                        dry_run and proposed until they are explicitly approved.
+                      </div>
+                      <table className="w-full text-xs font-mono">
+                        <thead>
+                          <tr className="text-slate-400 border-b border-[#1c2636] text-left">
+                            <th className="p-2">Action</th>
+                            <th className="p-2">Target</th>
+                            <th className="p-2">Mode</th>
+                            <th className="p-2">Status</th>
+                            <th className="p-2">Audit Ref</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#1c2636]/60">
+                          {(vm.response_actions || []).map((act, i) => (
+                            <tr key={i}>
+                              <td className="p-2 font-bold text-slate-200">{act.type}</td>
+                              <td className="p-2 text-sky-400 break-all">{act.target}</td>
+                              <td className="p-2 uppercase">{act.mode}</td>
+                              <td className="p-2">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                                  act.status === 'awaiting_approval' ? 'bg-[#2d0a0a] text-red-300 border-[#b71c1c]' : 'bg-[#151d2a] text-slate-300 border-[#2c3b52]'
+                                }`}>
+                                  {act.status}
+                                </span>
+                              </td>
+                              <td className="p-2 text-slate-400">{act.audit_ref || "Pending Authorization"}</td>
+                            </tr>
+                          ))}
+                          {!(vm.response_actions || []).length && (
+                            <tr><td colSpan="5" className="p-2 text-slate-500">No response actions were proposed.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </Panel>
+                  )}
+
+                  {activeTab === "audit" && (
+                    <Panel title="Full Contract Document (analysis_result.schema.json)" subtitle={doc.analysis_id}>
+                      <pre className="p-4 bg-[#080c14] rounded border border-[#1c2636] text-xs font-mono text-sky-400 max-h-[500px] overflow-y-auto select-all">
+                        {JSON.stringify(doc, null, 2)}
+                      </pre>
+                    </Panel>
+                  )}
+                </div>
+              </>
+            )}
+          </main>
+
+          {/* Upload Modal */}
+          {isUploadOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 anim-layer-1">
+              <div className="bg-[#0b1017] border border-[#1c2636] rounded-lg max-w-lg w-full p-6 space-y-4 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-[#1c2636] pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 bg-[#1565c0] rounded-sm transform rotate-45 inline-block" />
+                    <h2 className="text-sm font-mono font-bold uppercase tracking-wider text-slate-100">
+                      Ingest Sample into M1 Vault
+                    </h2>
+                  </div>
+                  <button
+                    onClick={() => { setIsUploadOpen(false); setSelectedFile(null); }}
+                    className="text-slate-400 hover:text-white font-mono text-sm cursor-pointer"
+                  >
+                    X
+                  </button>
+                </div>
+
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOver(false);
+                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                      handleFileSelected(e.dataTransfer.files[0]);
+                    }
+                  }}
+                  className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition ${
+                    dragOver ? 'border-[#1565c0] bg-[#121924]' : 'border-[#1c2636] hover:border-slate-500 bg-[#080c14]'
+                  }`}
+                  onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                >
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        handleFileSelected(e.target.files[0]);
+                      }
+                    }}
+                  />
+                  <div className="space-y-2">
+                    <div className="text-xs font-mono text-slate-200 font-bold">
+                      {selectedFile ? selectedFile.name : "Click to browse or drop file here"}
+                    </div>
+                    <div className="text-[11px] font-mono text-slate-500">
+                      {selectedFile ? `${(selectedFile.size / 1024).toFixed(1)} KB` : "Max 100 MiB - PE or password-protected ZIP (MalwareBazaar)"}
+                    </div>
+                  </div>
+                </div>
+
+                {uploadLoading && (
+                  <div className="text-center py-2 text-xs font-mono text-[#42a5f5] animate-pulse">
+                    [+] Running the pipeline: ingest, static analysis, sandbox stage, IOCs and scoring...
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-[#1c2636]">
+                  <button
+                    onClick={() => { setIsUploadOpen(false); setSelectedFile(null); }}
+                    className="px-3 py-1.5 rounded bg-[#080c14] border border-[#1c2636] text-xs font-mono text-slate-400 hover:text-slate-200 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={!selectedFile || uploadLoading}
+                    onClick={() => handleUploadSubmit()}
+                    className={`px-4 py-1.5 rounded text-xs font-mono font-bold transition ${
+                      !selectedFile || uploadLoading
+                        ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                        : 'bg-[#1565c0] hover:bg-[#1976d2] text-white shadow-sm cursor-pointer'
+                    }`}
+                  >
+                    {uploadLoading ? "Processing..." : "Ingest & Analyze"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Toast Notification */}
+          {toast && (
+            <div className="fixed bottom-5 right-5 bg-[#0b1017] border border-[#1565c0] text-sky-300 px-4 py-2 rounded text-xs font-mono shadow-xl anim-layer-1 max-w-md break-all">
+              [NOTIFY] {toast}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>

@@ -4,8 +4,6 @@ Usage:
   python -m m8_ui_devops.cli --analysis-id <uuid> --vault-id <uuid> --out <path>
   python -m m8_ui_devops.cli --serve-ui --port 8088
 """
-from __future__ import annotations
-
 import argparse
 from datetime import datetime, timezone
 import json
@@ -15,6 +13,7 @@ import sys
 import uuid
 import webbrowser
 
+from m8_ui_devops.evidence import build_presentation
 from m8_ui_devops.reporting.models import ReportData
 from m8_ui_devops.reporting.pdf_report import generate_pdf_report
 from m8_ui_devops.reporting.html_report import generate_html_report
@@ -42,20 +41,24 @@ def find_available_port(host: str, preferred_port: int) -> int:
     return preferred_port
 
 
-def serve_dashboard(host: str = "127.0.0.1", port: int = 8088, open_browser: bool = False):
-    """Serve the web UI using FastAPI / uvicorn."""
-    import uvicorn
-    from fastapi import FastAPI, HTTPException, Response, UploadFile, File
+def create_dashboard_app(host: str = "127.0.0.1", port: int = 8088):
+    """Build the M8 command console FastAPI application.
+
+    The console is a presentation layer over M7: samples are analysed by the
+    pipeline and the finished document is persisted by M7, which owns
+    pipeline and database state. M8 never writes analysis state itself.
+    """
+    from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
+    from sqlalchemy.orm import Session
+
+    from m7_core.database import get_db
+    from m7_core.services.analysis_service import AnalysisService
+    from m7_core.services.pipeline_runner import ArchiveRejected, run_full_pipeline
+    from m7_core.services.section_service import SectionStateConflictError
 
     app = FastAPI(title="TRAC Security Command Platform (M8)", version="1.0.0")
-
-    actual_port = find_available_port(host, port)
-    if actual_port != port:
-        print(f"[!] Notice: Port {port} is unavailable or restricted by Windows access permissions.")
-        print(f"[*] Automatically falling back to available port {actual_port}.")
-        port = actual_port
 
     app.add_middleware(
         CORSMiddleware,
@@ -65,135 +68,105 @@ def serve_dashboard(host: str = "127.0.0.1", port: int = 8088, open_browser: boo
         allow_headers=["*"],
     )
 
-    # API endpoints for live reports and mock/real data
+    def load_document(analysis_id: str, db: Session):
+        doc = AnalysisService(db).get_analysis_document(analysis_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Analysis not found")
+        return doc
+
     @app.get("/api/health")
     def health_check():
         return {"status": "ok", "module": "M8_UI_DEVOPS", "version": "1.0.0"}
 
-    @app.get("/api/reports/{analysis_id}/pdf")
-    def get_report_pdf(analysis_id: str):
-        # Find fixture or report
-        sample_path = Path("contract/examples/valid_synthetic_trojan_record.json")
-        if not sample_path.exists():
-            raise HTTPException(status_code=404, detail="Sample fixture not found")
-        with open(sample_path, "r", encoding="utf-8") as f:
-            doc = json.load(f)
-        doc["analysis_id"] = analysis_id
+    @app.get("/api/analyses", summary="List analyses persisted by M7")
+    def list_analyses(db: Session = Depends(get_db)):
+        return AnalysisService(db).list_analyses(limit=100)
 
-        out_path = Path(f"data/reports/{analysis_id}.pdf")
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        generate_pdf_report(doc, out_path)
-        return Response(content=out_path.read_bytes(), media_type="application/pdf")
+    @app.get("/api/analyses/{analysis_id}/view", summary="Contract document with evidence labels")
+    def get_analysis_view(analysis_id: str, db: Session = Depends(get_db)):
+        doc = load_document(analysis_id, db)
+        return {"document": doc, "presentation": build_presentation(doc)}
 
-    @app.get("/api/reports/{analysis_id}/html")
-    def get_report_html(analysis_id: str):
-        sample_path = Path("contract/examples/valid_synthetic_trojan_record.json")
-        if not sample_path.exists():
-            raise HTTPException(status_code=404, detail="Sample fixture not found")
-        with open(sample_path, "r", encoding="utf-8") as f:
-            doc = json.load(f)
-        doc["analysis_id"] = analysis_id
-        html = generate_html_report(doc)
-        return Response(content=html, media_type="text/html")
-
-    @app.post("/api/samples/upload")
-    async def upload_sample_endpoint(file: UploadFile = File(...)):
+    @app.post("/api/samples/upload", summary="Analyse an uploaded sample")
+    async def upload_sample_endpoint(
+        file: UploadFile = File(...),
+        archive_password: str = Form("infected"),
+        db: Session = Depends(get_db),
+    ):
         content = await file.read()
         if len(content) > 100 * 1024 * 1024:
             raise HTTPException(status_code=413, detail="File exceeds 100 MiB limit")
         if not content:
             raise HTTPException(status_code=422, detail="Uploaded file is empty")
 
-        from m1_ingestion.vault import SampleVault
-        from m6_response.planner.response_planner import ResponsePlanner
+        try:
+            document = run_full_pipeline(
+                raw_bytes=content,
+                original_filename=file.filename or "sample.exe",
+                archive_password=archive_password,
+            )
+        except ArchiveRejected as exc:
+            status_code = 413 if exc.code == "PAYLOAD_TOO_LARGE" else 400
+            raise HTTPException(status_code=status_code, detail=f"{exc.code}: {exc.message}")
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {exc}")
 
-        vault = SampleVault()
-        sample_rec, event_rec, is_dup = vault.ingest(content, original_name=file.filename or "sample.bin")
-        aid = event_rec["analysis_id"]
+        try:
+            AnalysisService(db).persist_pipeline_result(document)
+        except SectionStateConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"M7 could not persist the analysis: {exc}")
 
-        is_eicar = b"EICAR" in content
-        is_exe = content.startswith(b"MZ")
-        score_val = 88 if (is_eicar or is_exe) else 15
-        label = "malicious" if score_val >= 60 else "benign"
-        severity = "critical" if is_eicar else ("high" if is_exe else "info")
+        return {"document": document, "presentation": build_presentation(document)}
 
-        analysis_doc = {
-            "contract_version": "1.0.0",
-            "analysis_id": aid,
-            "sample": sample_rec,
-            "pipeline": {
-                "status": "complete",
-                "stages": {"ingestion": "done", "scoring": "done", "response": "done"}
-            },
-            "iocs": {
-                "hashes": {
-                    "sha256": [sample_rec["sha256"]],
-                    "md5": [sample_rec["md5"]]
-                },
-                "network": {
-                    "domains": ["malicious-c2[.]example"] if label == "malicious" else [],
-                    "ipv4": ["192.0.2.100"] if label == "malicious" else []
-                },
-                "host": {
-                    "files": [sample_rec["original_name"]],
-                    "registry_keys": [r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run\TrojanUpdate"] if label == "malicious" else []
-                }
-            },
-            "detections": {
-                "status": "done",
-                "items": [
-                    {
-                        "rule_id": "File_Signature_Analysis",
-                        "kind": "heuristic",
-                        "severity": severity,
-                        "attack_ids": ["T1027"] if label == "malicious" else [],
-                        "tags": [sample_rec.get("file_type", "unknown")]
-                    }
-                ]
-            },
-            "score": {
-                "value": score_val,
-                "method": "ensemble",
-                "components": [
-                    {"name": "vault_heuristics", "weight": 1.0, "contribution": score_val}
-                ]
-            },
-            "verdict": {
-                "label": label,
-                "severity": severity,
-                "confidence": 0.95,
-                "family_guess": "trojan_payload" if label == "malicious" else "clean_binary",
-                "explanation": [
-                    f"Sample ingested into M1 Vault: {sample_rec['original_name']}",
-                    f"Stored encrypted & defanged with SHA-256: {sample_rec['sha256'][:16]}...",
-                    "First-pass scan status: " + str(sample_rec.get("first_pass_av", "clean"))
-                ]
-            }
-        }
+    @app.get("/api/reports/{analysis_id}/pdf")
+    def get_report_pdf(analysis_id: str, db: Session = Depends(get_db)):
+        doc = load_document(analysis_id, db)
+        out_path = Path(f"data/reports/{analysis_id}.pdf")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        generate_pdf_report(doc, out_path)
+        return Response(content=out_path.read_bytes(), media_type="application/pdf")
 
-        planner = ResponsePlanner(mode="dry_run")
-        analysis_doc["response_actions"] = planner.plan_response(analysis_doc)
-        return analysis_doc
+    @app.get("/api/reports/{analysis_id}/html")
+    def get_report_html(analysis_id: str, db: Session = Depends(get_db)):
+        doc = load_document(analysis_id, db)
+        html = generate_html_report(doc)
+        return Response(content=html, media_type="text/html")
 
-    # Serve built dist or standalone HTML
-    dist_dir = Path(__file__).resolve().parent / "ui" / "dist"
+    # The console is version controlled at ui/standalone.html. A React build in
+    # ui/dist is only used when the standalone console is unavailable.
     standalone_html = Path(__file__).resolve().parent / "ui" / "standalone.html"
+    dist_index = Path(__file__).resolve().parent / "ui" / "dist" / "index.html"
 
-    if dist_dir.exists() and (dist_dir / "index.html").exists():
-        app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="ui")
-    elif standalone_html.exists():
+    if standalone_html.exists():
         @app.get("/")
         def serve_index():
             return Response(content=standalone_html.read_text(encoding="utf-8"), media_type="text/html")
+    elif dist_index.exists():
+        app.mount("/", StaticFiles(directory=str(dist_index.parent), html=True), name="ui")
     else:
         @app.get("/")
         def serve_fallback():
-            sample_path = Path("contract/examples/valid_synthetic_trojan_record.json")
-            if sample_path.exists():
-                with open(sample_path, "r", encoding="utf-8") as f:
-                    doc = json.load(f)
-                return Response(content=generate_html_report(doc), media_type="text/html")
-            return {"message": "TRAC M8 UI server running. Build UI with npm run build."}
+            return {"message": "TRAC M8 UI server running."}
+
+    return app
+
+
+def serve_dashboard(host: str = "127.0.0.1", port: int = 8088, open_browser: bool = False):
+    """Serve the web UI using FastAPI / uvicorn."""
+    import uvicorn
+    from m7_core.database import init_db
+
+    init_db()
+
+    actual_port = find_available_port(host, port)
+    if actual_port != port:
+        print(f"[!] Notice: Port {port} is unavailable or restricted by Windows access permissions.")
+        print(f"[*] Automatically falling back to available port {actual_port}.")
+        port = actual_port
+
+    app = create_dashboard_app(host=host, port=port)
 
     print(f"\n[+] TRAC Threat Response Command Center running on http://{host}:{port}")
     if open_browser:

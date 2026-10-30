@@ -38,6 +38,7 @@ class ReportData:
     packers: List[str]
     yara_matches: List[Dict[str, Any]]
     imports: List[str]
+    imphash: str
     sections: List[Dict[str, Any]]
     embedded_urls: List[str]
     
@@ -111,6 +112,7 @@ class ReportData:
             packers=static.get("packers", []),
             yara_matches=static.get("yara_matches", []),
             imports=pe.get("imports", []),
+            imphash=pe.get("imphash", ""),
             sections=pe.get("sections", []),
             embedded_urls=static.get("embedded_urls", []),
             

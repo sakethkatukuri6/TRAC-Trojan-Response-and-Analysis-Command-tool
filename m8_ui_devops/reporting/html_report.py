@@ -6,12 +6,14 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
+from m8_ui_devops.evidence import build_presentation
 from m8_ui_devops.reporting.models import ReportData
 
 
 def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = None) -> str:
     """Compile a self-contained, responsive HTML report from analysis document."""
     d = ReportData.from_doc(doc)
+    sandbox = build_presentation(doc)["sandbox"]
 
     # Severity styling
     sev = d.verdict_severity.lower()
@@ -55,7 +57,7 @@ def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = N
         <tr>
             <td class="font-mono text-amber">{html.escape(a.get('id', 'N/A'))}</td>
             <td class="font-semibold">{html.escape(a.get('tactic', 'N/A').upper())}</td>
-            <td>{html.escape(a.get('evidence', 'Observed in telemetry'))}</td>
+            <td>{html.escape(a.get('evidence') or 'No evidence recorded')}</td>
         </tr>
         """
 
@@ -84,6 +86,67 @@ def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = N
             {cmd}
         </div>
         """
+
+    # Sandbox block: runtime facts appear only when the sandbox actually ran.
+    if sandbox["observed"]:
+        sb = sandbox["telemetry"].get("sandbox") or {}
+        sandbox_block = f"""
+            <div style="margin-bottom: 12px; font-size: 12px; color: var(--text-dim);">
+                Engine: <span class="font-bold text-white">{html.escape(str(sb.get('engine', '')).upper())}</span> |
+                Guest: <span class="font-bold text-white">{html.escape(str(sb.get('guest_os', '')))}</span> |
+                Network Mode: <span class="font-bold text-white">{html.escape(str(sb.get('network_mode', '')).upper())}</span>
+            </div>
+            {proc_list or '<div class="text-muted">The sandbox observed no spawned processes.</div>'}
+        """
+    else:
+        sandbox_block = f"""
+            <div style="font-size: 12px; color: var(--text-dim);">{html.escape(sandbox['detail'])}</div>
+            <div class="text-muted" style="margin-top: 10px; font-size: 12px;">
+                No process tree, file drop, registry change, mutex, beacon or timing is reported for this analysis
+                because none was observed.
+            </div>
+        """
+        if sandbox["error"]:
+            sandbox_block += f"""
+            <div style="margin-top: 10px; padding: 8px; border: 1px solid var(--danger); border-radius: 4px; color: #fca5a5; font-size: 12px;">
+                Operator error: {html.escape(sandbox['error'])}
+            </div>
+        """
+
+    # Static evidence recovered by M2 from the submitted binary.
+    entropy_str = f"{d.entropy:.2f} / 8.00" if d.entropy is not None else "N/A"
+    packers_str = ", ".join(d.packers) if d.packers else "None detected"
+    imphash_str = html.escape(d.imphash) if d.imphash else "Not recovered"
+    section_rows = ""
+    for sec in d.sections:
+        section_rows += f"""
+        <tr>
+            <td class="font-mono text-cyan">{html.escape(str(sec.get('name', 'N/A')))}</td>
+            <td class="text-right font-mono">{float(sec.get('entropy') or 0.0):.2f}</td>
+            <td class="text-right font-mono">{int(sec.get('raw_size') or 0):,}</td>
+        </tr>
+        """
+    import_items = "".join(f"<li>{html.escape(name)}</li>" for name in d.imports[:60])
+    static_block = f"""
+            <div class="grid-2">
+                <table class="table">
+                    <tr><td class="text-dim">File Class:</td><td class="font-bold">{html.escape(d.file_class.upper())}</td></tr>
+                    <tr><td class="text-dim">Entropy:</td><td class="font-mono">{entropy_str}</td></tr>
+                    <tr><td class="text-dim">Packers:</td><td>{html.escape(packers_str)}</td></tr>
+                    <tr><td class="text-dim">Imphash:</td><td class="font-mono text-dim">{imphash_str}</td></tr>
+                </table>
+                <table class="table">
+                    <thead><tr><th>PE Section</th><th class="text-right">Entropy</th><th class="text-right">Raw Size</th></tr></thead>
+                    <tbody>{section_rows or '<tr><td colspan="3" class="text-muted">No PE section table (file class is not PE).</td></tr>'}</tbody>
+                </table>
+            </div>
+            <div style="margin-top: 10px;">
+                <div class="text-dim" style="font-size: 11px; margin-bottom: 4px;">
+                    Imported functions ({len(d.imports)}) recovered from the import directory:
+                </div>
+                <ul class="font-mono" style="font-size: 11px; margin: 0; padding-left: 18px;">{import_items or '<li>No imports recovered.</li>'}</ul>
+            </div>
+    """
 
     # Actions rows
     act_rows = ""
@@ -387,9 +450,15 @@ def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = N
             </div>
         </div>
 
+        <!-- Static Analysis Evidence -->
+        <div class="card">
+            <div class="card-header">2. Static Analysis Evidence (Parsed By M2)</div>
+            {static_block}
+        </div>
+
         <!-- Threat Score Audit -->
         <div class="card">
-            <div class="card-header">2. Weighted Threat Score Decomposition</div>
+            <div class="card-header">3. Weighted Threat Score Decomposition</div>
             <table class="table">
                 <thead>
                     <tr><th>Component Model</th><th class="text-right">Weight</th><th class="text-right">Contribution</th></tr>
@@ -401,7 +470,7 @@ def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = N
         <!-- MITRE ATT&CK Matrix -->
         {f'''
         <div class="card">
-            <div class="card-header">3. MITRE ATT&CK Matrix Mapping</div>
+            <div class="card-header">4. MITRE ATT&CK Capability Mapping (Static Evidence)</div>
             <table class="table">
                 <thead><tr><th>Technique ID</th><th>Tactic</th><th>Evidence</th></tr></thead>
                 <tbody>{attack_rows}</tbody>
@@ -411,27 +480,22 @@ def generate_html_report(doc: Dict[str, Any], output_path: str | Path | None = N
 
         <!-- Indicators of Compromise -->
         <div class="card">
-            <div class="card-header">4. Indicators of Compromise (Defanged)</div>
+            <div class="card-header">5. Indicators of Compromise (Defanged)</div>
             <table class="table">
                 <thead><tr><th>Type</th><th>Defanged Value</th><th>Source</th><th>Confidence</th></tr></thead>
                 <tbody>{ioc_rows or '<tr><td colspan="4" class="text-muted">No IOCs identified.</td></tr>'}</tbody>
             </table>
         </div>
 
-        <!-- Dynamic Execution & Behavior -->
+        <!-- Sandbox Telemetry -->
         <div class="card">
-            <div class="card-header">5. Dynamic Telemetry & Process Tree</div>
-            <div style="margin-bottom: 12px; font-size: 12px; color: var(--text-dim);">
-                Engine: <span class="font-bold text-white">{html.escape(d.sandbox_engine.upper())}</span> |
-                Guest: <span class="font-bold text-white">{html.escape(d.guest_os)}</span> |
-                Network Mode: <span class="font-bold text-white">{html.escape(d.network_mode.upper())}</span>
-            </div>
-            {proc_list or '<div class="text-muted">No spawned processes detected.</div>'}
+            <div class="card-header">6. {html.escape(sandbox['label'])}</div>
+            {sandbox_block}
         </div>
 
         <!-- Incident Response Actions -->
         <div class="card">
-            <div class="card-header">6. Incident Containment & Response Log</div>
+            <div class="card-header">7. Incident Containment & Response Log</div>
             <table class="table">
                 <thead><tr><th>Action</th><th>Target</th><th>Mode</th><th>Status</th><th>Audit Ref</th></tr></thead>
                 <tbody>{act_rows or '<tr><td colspan="5" class="text-muted">No response actions triggered.</td></tr>'}</tbody>

@@ -27,30 +27,35 @@ def load_playbook(name: str) -> Dict[str, Any]:
 
 
 def _resolve_target(target_rule: Dict[str, Any], doc: Dict[str, Any]) -> Optional[str]:
+    """Resolve an action target from observed data only.
+
+    Returns ``None`` when the document carries no such indicator; a target is
+    never invented, because a containment action against a fabricated domain,
+    IP or host would be an untruthful instruction.
+    """
     if "target_fixed" in target_rule:
         return target_rule["target_fixed"]
 
     src = target_rule.get("target_from", "")
     if src == "sample.sha256":
-        return doc.get("sample", {}).get("sha256") or "c" * 64
+        return doc.get("sample", {}).get("sha256")
 
     if src == "iocs.domain":
         iocs = doc.get("iocs", {}).get("items", [])
         for item in iocs:
             if item.get("type") == "domain":
                 return item.get("value")
-        return "c2[.]example"
+        return None
 
     if src == "iocs.ip":
         iocs = doc.get("iocs", {}).get("items", [])
         for item in iocs:
             if item.get("type") == "ip":
                 return item.get("value")
-        return "192[.]0[.]2[.]10"
+        return None
 
     if src.startswith("dynamic."):
-        dyn = doc.get("dynamic", {})
-        return dyn.get("sandbox", {}).get("guest_os", "win10-x64")
+        return doc.get("dynamic", {}).get("sandbox", {}).get("guest_os")
 
     return None
 
@@ -94,7 +99,10 @@ class ResponsePlanner:
 
         for idx, rule in enumerate(rules):
             action_type = rule["type"]
-            target = _resolve_target(rule, doc) or "default_target"
+            target = _resolve_target(rule, doc)
+            if not target:
+                # No observed indicator backs this action, so none is proposed.
+                continue
             mode = effective_mode
             status = "proposed"
 
