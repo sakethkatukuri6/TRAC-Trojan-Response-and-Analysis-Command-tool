@@ -22,3 +22,6 @@ dist/
 # Secrets file
 .secrets
 .secrets*
+
+# Runtime data and test reports
+data/

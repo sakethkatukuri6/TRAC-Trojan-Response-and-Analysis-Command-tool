@@ -364,13 +364,15 @@ class PDFReportGenerator:
         entropy_str = f"{self.data.entropy:.2f} / 8.00" if self.data.entropy is not None else "N/A"
         packers_str = ", ".join(self.data.packers) if self.data.packers else "None Detected"
         yara_str = ", ".join([y.get("rule", "") for y in self.data.yara_matches]) or "No rule hits"
-        
+        urls_joined = ", ".join(self.data.embedded_urls) or "None"
+        entropy_tag = '<font color="red"><b>[HIGH - Suspicious Packing]</b></font>' if (self.data.entropy or 0) > 7.0 else '[Normal]'
+
         info_p = Paragraph(
-            f"<b>Entropy:</b> {entropy_str} {'<font color=\"red\"><b>[HIGH - Suspicious Packing]</b></font>' if (self.data.entropy or 0) > 7.0 else '[Normal]'} | "
+            f"<b>Entropy:</b> {entropy_str} {entropy_tag} | "
             f"<b>Packers:</b> {packers_str}<br/>"
             f"<b>YARA Detections:</b> {yara_str}<br/>"
-            f"<b>Embedded URLs (Defanged):</b> {', '.join(self.data.embedded_urls) or 'None'}",
-            self.body_style,
+            f"<b>Embedded URLs (Defanged):</b> {urls_joined}",
+            self.body_style
         )
         items.append(info_p)
 

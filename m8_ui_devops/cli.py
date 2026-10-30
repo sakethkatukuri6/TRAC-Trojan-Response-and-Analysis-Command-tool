@@ -72,13 +72,18 @@ def serve_dashboard(host: str = "127.0.0.1", port: int = 8088, open_browser: boo
 
     @app.get("/api/reports/{analysis_id}/pdf")
     def get_report_pdf(analysis_id: str):
-        # Find fixture or report
-        sample_path = Path("contract/examples/valid_synthetic_trojan_record.json")
-        if not sample_path.exists():
-            raise HTTPException(status_code=404, detail="Sample fixture not found")
-        with open(sample_path, "r", encoding="utf-8") as f:
-            doc = json.load(f)
-        doc["analysis_id"] = analysis_id
+        # Prefer actual analysis result if available, else fallback to contract fixture
+        real_doc_path = Path(f"data/analyses/{analysis_id}.json")
+        if real_doc_path.exists():
+            with open(real_doc_path, "r", encoding="utf-8") as f:
+                doc = json.load(f)
+        else:
+            sample_path = Path("contract/examples/valid_synthetic_trojan_record.json")
+            if not sample_path.exists():
+                raise HTTPException(status_code=404, detail="Sample fixture not found")
+            with open(sample_path, "r", encoding="utf-8") as f:
+                doc = json.load(f)
+            doc["analysis_id"] = analysis_id
 
         out_path = Path(f"data/reports/{analysis_id}.pdf")
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -87,12 +92,18 @@ def serve_dashboard(host: str = "127.0.0.1", port: int = 8088, open_browser: boo
 
     @app.get("/api/reports/{analysis_id}/html")
     def get_report_html(analysis_id: str):
-        sample_path = Path("contract/examples/valid_synthetic_trojan_record.json")
-        if not sample_path.exists():
-            raise HTTPException(status_code=404, detail="Sample fixture not found")
-        with open(sample_path, "r", encoding="utf-8") as f:
-            doc = json.load(f)
-        doc["analysis_id"] = analysis_id
+        real_doc_path = Path(f"data/analyses/{analysis_id}.json")
+        if real_doc_path.exists():
+            with open(real_doc_path, "r", encoding="utf-8") as f:
+                doc = json.load(f)
+        else:
+            sample_path = Path("contract/examples/valid_synthetic_trojan_record.json")
+            if not sample_path.exists():
+                raise HTTPException(status_code=404, detail="Sample fixture not found")
+            with open(sample_path, "r", encoding="utf-8") as f:
+                doc = json.load(f)
+            doc["analysis_id"] = analysis_id
+
         html = generate_html_report(doc)
         return Response(content=html, media_type="text/html")
 
@@ -104,75 +115,24 @@ def serve_dashboard(host: str = "127.0.0.1", port: int = 8088, open_browser: boo
         if not content:
             raise HTTPException(status_code=422, detail="Uploaded file is empty")
 
-        from m1_ingestion.vault import SampleVault
-        from m6_response.planner.response_planner import ResponsePlanner
+        from m7_core.services.pipeline_runner import run_full_pipeline
 
-        vault = SampleVault()
-        sample_rec, event_rec, is_dup = vault.ingest(content, original_name=file.filename or "sample.bin")
-        aid = event_rec["analysis_id"]
+        try:
+            analysis_doc = run_full_pipeline(
+                raw_bytes=content,
+                original_filename=file.filename or "sample.exe",
+                archive_password="infected",
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {exc}")
 
-        is_eicar = b"EICAR" in content
-        is_exe = content.startswith(b"MZ")
-        score_val = 88 if (is_eicar or is_exe) else 15
-        label = "malicious" if score_val >= 60 else "benign"
-        severity = "critical" if is_eicar else ("high" if is_exe else "info")
+        # Persist full analysis document for PDF/HTML report retrieval
+        aid = analysis_doc["analysis_id"]
+        doc_dir = Path("data/analyses")
+        doc_dir.mkdir(parents=True, exist_ok=True)
+        with open(doc_dir / f"{aid}.json", "w", encoding="utf-8") as f:
+            json.dump(analysis_doc, f, indent=2)
 
-        analysis_doc = {
-            "contract_version": "1.0.0",
-            "analysis_id": aid,
-            "sample": sample_rec,
-            "pipeline": {
-                "status": "complete",
-                "stages": {"ingestion": "done", "scoring": "done", "response": "done"}
-            },
-            "iocs": {
-                "hashes": {
-                    "sha256": [sample_rec["sha256"]],
-                    "md5": [sample_rec["md5"]]
-                },
-                "network": {
-                    "domains": ["malicious-c2[.]example"] if label == "malicious" else [],
-                    "ipv4": ["192.0.2.100"] if label == "malicious" else []
-                },
-                "host": {
-                    "files": [sample_rec["original_name"]],
-                    "registry_keys": [r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run\TrojanUpdate"] if label == "malicious" else []
-                }
-            },
-            "detections": {
-                "status": "done",
-                "items": [
-                    {
-                        "rule_id": "File_Signature_Analysis",
-                        "kind": "heuristic",
-                        "severity": severity,
-                        "attack_ids": ["T1027"] if label == "malicious" else [],
-                        "tags": [sample_rec.get("file_type", "unknown")]
-                    }
-                ]
-            },
-            "score": {
-                "value": score_val,
-                "method": "ensemble",
-                "components": [
-                    {"name": "vault_heuristics", "weight": 1.0, "contribution": score_val}
-                ]
-            },
-            "verdict": {
-                "label": label,
-                "severity": severity,
-                "confidence": 0.95,
-                "family_guess": "trojan_payload" if label == "malicious" else "clean_binary",
-                "explanation": [
-                    f"Sample ingested into M1 Vault: {sample_rec['original_name']}",
-                    f"Stored encrypted & defanged with SHA-256: {sample_rec['sha256'][:16]}...",
-                    "First-pass scan status: " + str(sample_rec.get("first_pass_av", "clean"))
-                ]
-            }
-        }
-
-        planner = ResponsePlanner(mode="dry_run")
-        analysis_doc["response_actions"] = planner.plan_response(analysis_doc)
         return analysis_doc
 
     # Serve built dist or standalone HTML
