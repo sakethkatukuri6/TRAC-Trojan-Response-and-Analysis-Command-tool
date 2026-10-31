@@ -38,5 +38,35 @@
     "file_type": "pe",
     "original_name": "sample_first.exe",
     "received_at": "2026-10-27T01:42:26.559372+00:00"
+  },
+  "9e92ca9e42081b0932a120476028a60cc4770522dd1c9b7394d697f3e36e5bd6": {
+    "vault_id": "019da7ef-28ae-4c97-89d2-5002d114c0b3",
+    "sha256": "9e92ca9e42081b0932a120476028a60cc4770522dd1c9b7394d697f3e36e5bd6",
+    "md5": "d6b05ea8cfbf10b9707182f604686c4a",
+    "sha1": "5a99d4ef95f3f37caed860842053cd074bae8422",
+    "size_bytes": 10093819,
+    "file_type": "pe",
+    "original_name": "9e92ca9e42081b0932a120476028a60cc4770522dd1c9b7394d697f3e36e5bd6.exe",
+    "received_at": "2026-10-30T11:15:55.751346+00:00"
+  },
+  "97ef870406a1f48080539a324094cdb9eae8f41aeafdc8be86f4c4aaa5a4f14e": {
+    "vault_id": "7727cadc-d80d-4ed0-9f5b-d5f2364f4bb8",
+    "sha256": "97ef870406a1f48080539a324094cdb9eae8f41aeafdc8be86f4c4aaa5a4f14e",
+    "md5": "03a7bb983c61495a27eaa983150c6642",
+    "sha1": "c90f2e3ca471312f4f6293bc98b22c28a2a87349",
+    "size_bytes": 864256,
+    "file_type": "pe",
+    "original_name": "97ef870406a1f48080539a324094cdb9eae8f41aeafdc8be86f4c4aaa5a4f14e.exe",
+    "received_at": "2026-10-30T11:37:31.138176+00:00"
+  },
+  "fb0348bf4f159bc6ffeb2a859b79c855bcecbd3ce34c8519d8af6dc1425d5393": {
+    "vault_id": "1148ea88-02f6-4ffa-854e-76f784e584fd",
+    "sha256": "fb0348bf4f159bc6ffeb2a859b79c855bcecbd3ce34c8519d8af6dc1425d5393",
+    "md5": "14953122421c03272b79916abf16f0c8",
+    "sha1": "3be77a70d122802c3149b8308ba8c39157db7206",
+    "size_bytes": 2556999,
+    "file_type": "pe",
+    "original_name": "fb0348bf4f159bc6ffeb2a859b79c855bcecbd3ce34c8519d8af6dc1425d5393.exe",
+    "received_at": "2026-10-31T01:29:07.878426+00:00"
   }
 }
