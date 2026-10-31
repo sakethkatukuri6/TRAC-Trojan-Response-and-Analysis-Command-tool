@@ -119,6 +119,7 @@ only module that writes the database.
 | `M6_MODULE_TOKEN` | Bearer token M6 presents to M7 | minted locally by M7's module-token helper |
 | `TRAC_ARCHIVE_PASSWORD` | ZIP password assumed for archives that arrive without one | `infected` (MalwareBazaar) |
 | `TRAC_REPORTS_DIR` | Where generated PDF/HTML reports are written | `data/reports` |
+| `TRAC_KNOWN_BAD_DB` | Known-bad hash corpus M5 consults for `threat_intel_match`; a missing or malformed file is treated as "no assertion", never as clean | `m5_detection/corpus/known_bad_hashes.json` |
 | `TRAC_UI_HOST`, `TRAC_UI_PORT` | Console bind address when `--host`/`--port` are not given | `127.0.0.1`, `8088` |
 | `TRAC_UI_ALLOWED_ORIGINS` | Comma-separated browser origins allowed to call the console API | the console's own origin |
 

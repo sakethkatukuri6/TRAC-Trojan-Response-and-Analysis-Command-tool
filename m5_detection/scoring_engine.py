@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Set, Tuple
 
+from m5_detection.intel import corpus_provider, lookup_known_bad
+
 # Threat-score model. A factor contributes a fixed number of points when its
 # evidence is present. The contract's `weight` is that factor's ceiling share of
 # the 100-point score (max points / 100), so the weights reported are the numbers
@@ -25,6 +27,9 @@ FACTOR_MAX_POINTS = {
     "evasion_techniques": 10.0,
     "surveillance_modules": 10.0,
     "signature_match": 88.0,
+    # A hash named by a reputation corpus is as strong an assertion as a signature
+    # engine match, so it is weighted the same and shares the same 100-point ceiling.
+    "threat_intel_match": 88.0,
 }
 
 # Elevated-but-not-extreme entropy is half as alarming as a packed payload.
@@ -39,10 +44,11 @@ CRITICAL_MIN_SCORE = 80.0
 BENIGN_MAX_SCORE = 30.0
 
 # The identity of this scoring model, reported in every score section so a verdict
-# can be attributed to the weights that produced it. Both are bumped together:
-# changing FACTOR_MAX_POINTS or the bands above changes what the model is.
+# can be attributed to the weights that produced it. `method` is one of the three
+# values `analysis_result.schema.json` allows, so a factor or band change is carried
+# by `model_version` instead of a new method name.
 SCORE_METHOD = "weighted_rules_v1"
-SCORE_MODEL_VERSION = "1.0.0"
+SCORE_MODEL_VERSION = "1.1.0"
 
 
 def allocate_components(points: Dict[str, float]) -> Tuple[float, List[Dict[str, Any]]]:
@@ -78,6 +84,7 @@ def derive_confidence(
     av_ran: bool,
     yara_ran: bool,
     runtime_observed: bool,
+    intel_hit: bool = False,
 ) -> float:
     """State how much of the evidence base can actually support this verdict.
 
@@ -93,6 +100,10 @@ def derive_confidence(
     if signature_hit:
         # A signature engine named the threat; heuristics only corroborate it.
         return 0.95
+    if intel_hit:
+        # A reputation corpus named this exact digest, but it is a cached local
+        # assertion rather than a live engine, so it stops short of 0.95.
+        return 0.9
     if runtime_observed or yara_ran:
         # An independent engine or live telemetry backs the heuristics.
         return 0.8
@@ -249,6 +260,44 @@ def score_analysis(
         explanations.append("First-pass signature engine flagged known malicious signature.")
         signature_contrib = FACTOR_MAX_POINTS["signature_match"]
 
+    # 5. Threat-intel hash reputation against the locally held known-bad corpus
+    intel_contrib = 0.0
+    intel_hits: List[Dict[str, Any]] = []
+    provider = corpus_provider()
+    if provider:
+        digest = str(sample_record.get("sha256") or "").strip().lower()
+        entry = lookup_known_bad(digest)
+        if entry:
+            result = entry.get("result", "unknown")
+            intel_hits.append({
+                "provider": provider,
+                "indicator": digest,
+                "result": result,
+                "cached": True,
+            })
+            if result == "known_malicious":
+                intel_contrib = FACTOR_MAX_POINTS["threat_intel_match"]
+                family = str(entry.get("family") or "").strip()
+                detected_as = family or "an unclassified threat"
+                detection_items.append({
+                    "rule_id": "INTEL_HASH_KNOWN_BAD",
+                    "kind": "intel",
+                    "severity": "critical",
+                    "description": (
+                        f"SHA256 {digest} is listed as malicious by the local "
+                        f"{provider} reputation corpus ({detected_as})."
+                    ),
+                    "attack_ids": ["T1027"],
+                    "tags": ["known_bad_hash", detected_as],
+                })
+                behavior_tags.add("known_bad_hash")
+                if family and family_guess == "unknown":
+                    family_guess = re.sub(r"[^a-z0-9_]", "_", family.lower())
+                explanations.append(
+                    f"Hash reputation: the local {provider} corpus lists this exact digest "
+                    f"as malicious ({detected_as})."
+                )
+
     factor_points = {
         "entropy_heuristics": entropy_contrib,
         "process_injection": injection_contrib,
@@ -257,6 +306,7 @@ def score_analysis(
         "evasion_techniques": evasion_contrib,
         "surveillance_modules": keylogger_contrib,
         "signature_match": signature_contrib,
+        "threat_intel_match": intel_contrib,
     }
     score_val, components = allocate_components(factor_points)
 
@@ -283,6 +333,7 @@ def score_analysis(
         av_ran=av_ran,
         yara_ran=yara_ran,
         runtime_observed=runtime_observed,
+        intel_hit=intel_contrib > 0.0,
     )
     ran_sources = [
         name
@@ -291,6 +342,7 @@ def score_analysis(
             ("YARA rules", yara_ran),
             ("sandbox telemetry", runtime_observed),
             ("signature match", signature_contrib > 0.0),
+            ("hash reputation", intel_contrib > 0.0),
         )
         if ran
     ]
@@ -310,9 +362,10 @@ def score_analysis(
         "detections": {
             "status": "done",
             "items": detection_items,
-            # `intel_hits` is omitted rather than left empty: no reputation provider is
-            # queried by this pipeline, so an empty list would claim a check that
-            # returned nothing. A provider integration adds the key with real entries.
+            # `intel_hits` is omitted rather than left empty: an entry is only added
+            # when the reputation corpus actually holds the digest, so absence means
+            # "no assertion was made", not "a provider cleared it".
+            **({"intel_hits": intel_hits} if intel_hits else {}),
         },
         "score": {
             "value": score_val,

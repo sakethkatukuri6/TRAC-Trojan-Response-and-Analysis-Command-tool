@@ -1,0 +1,25 @@
+{
+  "provider": "malwarebazaar",
+  "description": "Local known-bad hash corpus. Seeded by hand from samples pulled off abuse.ch MalwareBazaar; every entry is a submission this operator holds the binary for.",
+  "updated_at": "2026-10-31",
+  "entries": [
+    {
+      "sha256": "9e92ca9e42081b0932a120476028a60cc4770522dd1c9b7394d697f3e36e5bd6",
+      "result": "known_malicious",
+      "family": "valleyrat",
+      "note": "ValleyRAT loader submitted from MalwareBazaar; ~10 MB."
+    },
+    {
+      "sha256": "97ef870406a1f48080539a324094cdb9eae8f41aeafdc8be86f4c4aaa5a4f14e",
+      "result": "known_malicious",
+      "family": "asyncrat",
+      "note": "AsyncRAT build submitted from MalwareBazaar; ~844 KB."
+    },
+    {
+      "sha256": "fb0348bf4f159bc6ffeb2a859b79c855bcecbd3ce34c8519d8af6dc1425d5393",
+      "result": "known_malicious",
+      "family": null,
+      "note": "2.5 MB native MinGW C++ build, Authenticode-signed on an individual Sectigo certificate that had expired before the compile timestamp. No family asserted."
+    }
+  ]
+}
