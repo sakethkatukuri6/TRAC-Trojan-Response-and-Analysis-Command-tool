@@ -21,6 +21,10 @@ app = FastAPI(title="M1 Ingestion & Sample Vault Service", version=get_platform_
 vault = SampleVault()
 
 
+HTTP_413 = getattr(status, "HTTP_413_CONTENT_TOO_LARGE", getattr(status, "HTTP_413_REQUEST_ENTITY_TOO_LARGE", 413))
+HTTP_422 = getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", getattr(status, "HTTP_422_UNPROCESSABLE_ENTITY", 422))
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok", "service": "m1_ingestion"}
@@ -48,7 +52,7 @@ def upload_sample(
         total_bytes += len(chunk)
         if total_bytes > MAX_FILE_SIZE:
             raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                status_code=HTTP_413,
                 detail=f"File exceeds the {MAX_FILE_SIZE} byte upload cap",
             )
         chunks.append(chunk)
@@ -56,7 +60,7 @@ def upload_sample(
     raw_data = b"".join(chunks)
     if len(raw_data) == 0:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=HTTP_422,
             detail="Uploaded file is empty",
         )
 
@@ -68,7 +72,7 @@ def upload_sample(
         )
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=HTTP_422,
             detail=str(exc),
         )
 

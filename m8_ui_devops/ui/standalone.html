@@ -46,6 +46,10 @@
     .anim-layer-3 { opacity: 0; animation: layerReveal 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.16s forwards; }
     .anim-layer-4 { opacity: 0; animation: layerReveal 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.24s forwards; }
     .anim-layer-5 { opacity: 0; animation: layerReveal 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.32s forwards; }
+
+    /* The upload modal is z-50 and its backdrop covers the viewport, so a notice
+       has to sit above it or a rejection reason is painted behind the dialog. */
+    .toast-layer { z-index: 60; }
   </style>
 </head>
 <body>
@@ -109,6 +113,7 @@
       const [uploadLoading, setUploadLoading] = useState(false);
       const [dragOver, setDragOver] = useState(false);
       const [selectedFile, setSelectedFile] = useState(null);
+      const [archivePassword, setArchivePassword] = useState("");
       const [apiOnline, setApiOnline] = useState(false);
       const [bootError, setBootError] = useState(null);
       const fileInputRef = useRef(null);
@@ -176,11 +181,24 @@
         setSelectedFile(file);
       };
 
+      const describeRejection = (payload, raw) => {
+        const detail = payload ? payload.detail : null;
+        if (typeof detail === "string") return detail;
+        // FastAPI reports a body validation failure as a list of located errors.
+        if (Array.isArray(detail)) {
+          return detail.map((d) => ((d.loc || []).slice(1).join(".") + ": " + d.msg)).join("; ");
+        }
+        return String(raw).slice(0, 300);
+      };
+
       const handleUploadSubmit = async () => {
         if (!selectedFile) return;
         setUploadLoading(true);
         const formData = new FormData();
         formData.append("file", selectedFile);
+        // Only sent when the analyst typed one, so the server's own default
+        // (TRAC_ARCHIVE_PASSWORD) still decides when this screen says nothing.
+        if (archivePassword.trim()) formData.append("archive_password", archivePassword);
 
         try {
           const response = await fetch("/api/samples/upload", { method: "POST", body: formData });
@@ -189,8 +207,7 @@
           try { payload = JSON.parse(raw); } catch (e) { payload = null; }
 
           if (!response.ok) {
-            const detail = payload && payload.detail ? JSON.stringify(payload.detail) : raw.slice(0, 300);
-            showToast("Upload rejected: " + detail);
+            showToast("Upload rejected (" + response.status + "): " + describeRejection(payload, raw));
             return;
           }
 
@@ -884,6 +901,24 @@
                   </div>
                 </div>
 
+                <label className="block space-y-1.5">
+                  <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
+                    Archive password (ZIP only)
+                  </span>
+                  <input
+                    type="text"
+                    value={archivePassword}
+                    onChange={(e) => setArchivePassword(e.target.value)}
+                    placeholder="Blank uses the server default"
+                    autoComplete="off"
+                    spellCheck="false"
+                    className="w-full px-2.5 py-1.5 rounded bg-[#080c14] border border-[#1c2636] text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-[#1565c0]"
+                  />
+                  <span className="block text-[10px] font-mono text-slate-500">
+                    A ZIP that cannot be opened with this password is rejected, not guessed at.
+                  </span>
+                </label>
+
                 {uploadLoading && (
                   <div className="text-center py-2 text-xs font-mono text-[#42a5f5] animate-pulse">
                     [+] Running the pipeline: ingest, static analysis, sandbox stage, IOCs and scoring...
@@ -915,7 +950,7 @@
 
           {/* Toast Notification */}
           {toast && (
-            <div className="fixed bottom-5 right-5 bg-[#0b1017] border border-[#1565c0] text-sky-300 px-4 py-2 rounded text-xs font-mono shadow-xl anim-layer-1 max-w-md break-all">
+            <div className="fixed bottom-5 right-5 bg-[#0b1017] border border-[#1565c0] text-sky-300 px-4 py-2 rounded text-xs font-mono shadow-xl anim-layer-1 toast-layer max-w-md break-all">
               [NOTIFY] {toast}
             </div>
           )}

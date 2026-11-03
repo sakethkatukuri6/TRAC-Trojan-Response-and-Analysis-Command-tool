@@ -1,4 +1,4 @@
-﻿"""M1 Intake client interface and HTTP implementation.
+"""M1 Intake client interface and HTTP implementation.
 
 Enforces M1 intake ownership per contract:
 - M1 Ingestion & Sample Vault owns sample intake and the 'sample' section.
@@ -13,6 +13,9 @@ import httpx
 from fastapi import HTTPException, status
 from m1_ingestion.vault import MAX_FILE_SIZE
 from m7_core.api.auth import create_module_token
+
+HTTP_413 = getattr(status, "HTTP_413_CONTENT_TOO_LARGE", getattr(status, "HTTP_413_REQUEST_ENTITY_TOO_LARGE", 413))
+HTTP_422 = getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", getattr(status, "HTTP_422_UNPROCESSABLE_ENTITY", 422))
 
 
 class CappedStream(io.RawIOBase):
@@ -35,7 +38,7 @@ class CappedStream(io.RawIOBase):
             self.bytes_read += len(chunk)
             if self.bytes_read > self.max_size:
                 raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    status_code=HTTP_413,
                     detail=f"File exceeds the {self.max_size} byte upload cap"
                 )
         return chunk
@@ -85,11 +88,11 @@ class M1IntakeClient:
                     return resp.json()
                 elif resp.status_code == 413:
                     raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        status_code=HTTP_413,
                         detail=f"File exceeds the {max_size} byte upload cap",
                     )
                 elif resp.status_code == 422:
-                    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=resp.json())
+                    raise HTTPException(status_code=HTTP_422, detail=resp.json())
                 else:
                     raise HTTPException(
                         status_code=status.HTTP_502_BAD_GATEWAY,
