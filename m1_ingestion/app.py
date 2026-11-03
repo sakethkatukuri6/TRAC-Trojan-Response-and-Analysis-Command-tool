@@ -1,7 +1,8 @@
 """M1 Ingestion Intake & Vault Service (FastAPI).
 
 Exposes:
-- POST /samples (Intake API for samples with 100 MiB cap, filename sanitization, dedup)
+- POST /samples (intake capped at the contract's size limit, with filename
+  sanitization and dedup)
 - GET /samples/{vault_id} (Download decrypted bytes for authorized modules)
 - GET /samples/{vault_id}/metadata (Get sample metadata)
 - GET /health (Liveness)
@@ -14,9 +15,14 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Response, Upload
 from fastapi.responses import JSONResponse
 
 from m1_ingestion.vault import MAX_FILE_SIZE, SampleVault
+from m7_core.contract.loader import get_platform_version
 
-app = FastAPI(title="M1 Ingestion & Sample Vault Service", version="1.0.0")
+app = FastAPI(title="M1 Ingestion & Sample Vault Service", version=get_platform_version())
 vault = SampleVault()
+
+
+HTTP_413 = getattr(status, "HTTP_413_CONTENT_TOO_LARGE", getattr(status, "HTTP_413_REQUEST_ENTITY_TOO_LARGE", 413))
+HTTP_422 = getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", getattr(status, "HTTP_422_UNPROCESSABLE_ENTITY", 422))
 
 
 @app.get("/health")
@@ -28,10 +34,12 @@ def health_check():
 def upload_sample(
     file: UploadFile = File(...),
     archive_password: Optional[str] = Form(None),
-    submitter: Optional[str] = Form("analyst1"),
+    submitter: Optional[str] = Form(None),
     authorization: Optional[str] = Header(None),
 ):
-    """Intake sample: enforces 100 MiB cap, sanitizes filename, stores encrypted & defanged."""
+    """Intake sample: enforces the contract size cap, sanitizes the filename,
+    then stores the payload encrypted and defanged.
+    """
     # Read file with size check
     chunks = []
     total_bytes = 0
@@ -44,32 +52,27 @@ def upload_sample(
         total_bytes += len(chunk)
         if total_bytes > MAX_FILE_SIZE:
             raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail="File exceeds 100 MiB cap",
+                status_code=HTTP_413,
+                detail=f"File exceeds the {MAX_FILE_SIZE} byte upload cap",
             )
         chunks.append(chunk)
 
     raw_data = b"".join(chunks)
     if len(raw_data) == 0:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=HTTP_422,
             detail="Uploaded file is empty",
         )
-
-    # Normalize default form params if called directly
-    submitter_str = "analyst1"
-    if submitter is not None and not hasattr(submitter, "default"):
-        submitter_str = str(submitter)
 
     try:
         sample_rec, event_rec, is_duplicate = vault.ingest(
             data=raw_data,
             original_name=file.filename or "sample.bin",
-            submitter=submitter_str,
+            submitter=submitter,
         )
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=HTTP_422,
             detail=str(exc),
         )
 

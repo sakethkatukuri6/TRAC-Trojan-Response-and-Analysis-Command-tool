@@ -5,6 +5,7 @@ import pytest
 from unittest.mock import AsyncMock, patch
 import httpx
 from fastapi import HTTPException
+from m1_ingestion.vault import MAX_FILE_SIZE
 from m7_core.api.app import app
 from m7_core.api.routers.analyses import upload_sample
 from m7_core.services.m1_intake_client import M1IntakeClient, CappedStream, get_m1_intake_client
@@ -103,14 +104,14 @@ def test_capped_stream_enforces_cap_while_streaming():
     with pytest.raises(HTTPException) as exc:
         s2.read(6)
     assert exc.value.status_code == 413
-    assert "File exceeds 100 MiB cap" in exc.value.detail
+    assert exc.value.detail == "File exceeds the 10 byte upload cap"
 
 
 @pytest.mark.asyncio
 async def test_upload_sample_oversized_file_size_rejected_413():
-    """Verify that if file.size exceeds 100 MiB, endpoint immediately rejects with 413 without reading."""
+    """Verify a file above the contract cap is rejected with 413 without being read."""
     mock_file = AsyncMock()
-    mock_file.size = 100 * 1024 * 1024 + 1
+    mock_file.size = MAX_FILE_SIZE + 1
     mock_file.file = io.BytesIO(b"oversized")
     mock_response = AsyncMock()
 
@@ -123,7 +124,7 @@ async def test_upload_sample_oversized_file_size_rejected_413():
             intake_client=AsyncMock(),
         )
     assert exc.value.status_code == 413
-    assert "File exceeds 100 MiB cap" in exc.value.detail
+    assert exc.value.detail == f"File exceeds the {MAX_FILE_SIZE} byte upload cap"
 
 
 @pytest.mark.asyncio
@@ -140,7 +141,7 @@ async def test_forward_sample_upload_streaming_cap_rejection():
                 max_size=50,
             )
         assert exc.value.status_code == 413
-        assert "File exceeds 100 MiB cap" in exc.value.detail
+        assert exc.value.detail == "File exceeds the 50 byte upload cap"
 
 
 def test_get_analysis_not_found(client, analyst_token):

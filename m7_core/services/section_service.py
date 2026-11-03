@@ -3,10 +3,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
-from m7_core.contract.loader import get_owner_for_section, validate_section
+from m7_core.contract.loader import get_final_states, get_owner_for_section, validate_section
 from m7_core.repository.analysis_repo import AnalysisRepository
 from m7_core.repository.action_repo import ActionRepository
 from m7_core.repository.audit_repo import AuditRepository
+
+# Derived from state_machine.yaml so an added terminal state cannot stay writable here.
+FINAL_STATES = tuple(get_final_states())
 
 
 class SectionOwnershipError(Exception):
@@ -60,7 +63,7 @@ class SectionService:
             raise AnalysisNotFoundError(
                 f"Analysis '{analysis_id}' not found. Sections can only be written to an existing analysis created by M1 intake."
             )
-        if analysis.pipeline_status in ("complete", "failed", "dead_letter"):
+        if analysis.pipeline_status in FINAL_STATES:
             raise SectionStateConflictError(f"Analysis in final state '{analysis.pipeline_status}' cannot be modified")
 
         # 4. Schema validation

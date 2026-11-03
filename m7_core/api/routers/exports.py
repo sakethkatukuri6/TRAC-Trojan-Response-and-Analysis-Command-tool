@@ -32,11 +32,25 @@ def export_analysis(
             csv_lines.append(f"{a.get('action_id')},{a.get('type')},{a.get('target')},{a.get('mode')},{a.get('status')}")
         return Response(content="\n".join(csv_lines), media_type="text/csv")
     elif format == "stix":
-        stix_bundle = {
-            "type": "bundle",
-            "id": f"bundle--{analysis_id}",
-            "objects": []
-        }
-        return Response(content=json.dumps(stix_bundle, indent=2), media_type="application/json")
+        # Imported lazily so the API still boots without the optional STIX library.
+        from m6_response.exports.stix_exporter import export_stix_bundle
+
+        try:
+            bundle = export_stix_bundle(
+                doc.get("response_actions") or [],
+                (doc.get("iocs") or {}).get("items") or [],
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"M6 STIX export failed: {type(exc).__name__}",
+            )
+        return Response(content=bundle, media_type="application/json")
     else:
-        return Response(content=f"%PDF-1.4 synthetic report for {analysis_id}", media_type="application/pdf")
+        # M7 stores the document; only M8 renders reports. An empty %PDF header here
+        # would be a file that no reader can open.
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="PDF reports are rendered by M8, not M7. Use GET "
+                   "/api/reports/{analysis_id}/pdf on the M8 console.",
+        )

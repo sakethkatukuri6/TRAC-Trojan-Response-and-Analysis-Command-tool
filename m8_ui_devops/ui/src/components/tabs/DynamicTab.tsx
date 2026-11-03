@@ -3,15 +3,24 @@ import { AnalysisDocument } from "../../types/contract";
 
 export function DynamicTab({ analysis }: { analysis: AnalysisDocument }) {
   const { dynamic } = analysis;
+  const status = (dynamic?.status || "").toLowerCase();
 
-  if (!dynamic || dynamic.status === "skipped") {
+  if (status !== "done") {
+    const reasons: Record<string, string> = {
+      skipped: "No sandbox endpoint was configured for this run, so the sample was never executed.",
+      failed: "The configured sandbox did not return a result for this run.",
+      running: "The sandbox run has not finished, so no runtime evidence is available yet.",
+    };
     return (
       <div className="bg-[#0b1017] border border-[#1c2636] rounded p-8 text-center space-y-2 anim-layer-5">
         <div className="text-amber-400 font-mono text-xs font-bold uppercase tracking-wider">
-          Dynamic Analysis Skipped / Non-Executable Class
+          Dynamic Analysis {status ? status.toUpperCase() : "NOT RUN"}
         </div>
         <div className="text-slate-500 font-mono text-xs">
-          Per contract state machine rules, dynamic execution is skipped for non-executable file types.
+          {reasons[status] || "The dynamic stage did not complete for this analysis."}
+        </div>
+        <div className="text-slate-600 font-mono text-xs italic pt-2">
+          No process tree, file drop, registry change, mutex, beacon or timing is shown because none was observed.
         </div>
       </div>
     );
@@ -48,8 +57,10 @@ export function DynamicTab({ analysis }: { analysis: AnalysisDocument }) {
             <span className="font-bold text-slate-200">{sb?.duration_s ?? 0}s / {sb?.timeout_s ?? 0}s</span>
           </div>
           <div className="bg-[#080c14] p-2.5 rounded border border-[#1c2636]">
-            <span className="text-slate-500 block text-[10px] uppercase">Network Isolation</span>
-            <span className="font-bold text-emerald-400 uppercase">{sb?.network_mode || "isolated"}</span>
+            <span className="text-slate-500 block text-[10px] uppercase">Network Mode</span>
+            <span className={`font-bold uppercase ${sb?.network_mode ? "text-emerald-400" : "text-slate-500"}`}>
+              {sb?.network_mode || "not reported"}
+            </span>
           </div>
           <div className="bg-[#080c14] p-2.5 rounded border border-[#1c2636]">
             <span className="text-slate-500 block text-[10px] uppercase">Trapped API Calls</span>

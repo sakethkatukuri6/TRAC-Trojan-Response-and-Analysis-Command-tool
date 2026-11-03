@@ -148,7 +148,7 @@
           "additionalProperties": false,
           "properties": {
             "count": { "type": "integer", "minimum": 0 },
-            "interesting": { "type": "array", "items": { "type": "string", "maxLength": 512 } },
+            "interesting": { "type": "array", "items": { "type": "string", "maxLength": 1024 } },
             "deobfuscated_count": { "type": "integer", "minimum": 0 }
           }
         },

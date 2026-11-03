@@ -2,7 +2,10 @@
 
 Supports both:
   python -m m1_ingestion.cli --file tests/data/eicar.com --out contract_out/sample.json
-  python -m m1_ingestion.cli --analysis-id <uuid> --vault-id <uuid> --out contract_out/sample.json
+  python -m m1_ingestion.cli --file sample.exe --analysis-id <uuid> --vault-id <uuid> --out contract_out/sample.json
+
+``--file`` is required: an ingestion CLI that invents a payload when none is given
+produces a vault record for a sample that was never submitted.
 """
 from __future__ import annotations
 
@@ -10,8 +13,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import tempfile
-from typing import Optional
 import uuid
 
 from m1_ingestion.scanner import EICAR_SIG
@@ -20,10 +21,15 @@ from m1_ingestion.vault import SampleVault
 
 def main():
     parser = argparse.ArgumentParser(description="M1 Ingestion CLI")
-    parser.add_argument("--file", required=False, default=None, help="Path to input sample file")
+    parser.add_argument("--file", required=True, help="Path to input sample file")
     parser.add_argument("--analysis-id", required=False, default=None, help="Analysis UUID")
     parser.add_argument("--vault-id", required=False, default=None, help="Vault UUID")
-    parser.add_argument("--submitter", required=False, default="analyst1", help="Sample submitter name")
+    parser.add_argument(
+        "--submitter",
+        required=False,
+        default=None,
+        help="Who submitted the sample; omitted from the record when not given",
+    )
     parser.add_argument("--out", required=True, help="Output path for sample section JSON")
     parser.add_argument("--event-out", required=False, default=None, help="Optional output path for sample.received event")
     args = parser.parse_args()
@@ -39,28 +45,23 @@ def main():
     vault_id = args.vault_id
 
     # Determine input bytes and original filename
-    if args.file:
-        file_path = Path(args.file)
-        orig_name = file_path.name
-        if file_path.exists():
-            try:
-                data = file_path.read_bytes()
-            except OSError:
-                # If host AV locked eicar.com on Windows
-                if "eicar" in orig_name.lower():
-                    data = EICAR_SIG
-                else:
-                    raise
-        else:
-            # Fallback for EICAR if quarantined by host AV
+    file_path = Path(args.file)
+    orig_name = file_path.name
+    if file_path.exists():
+        try:
+            data = file_path.read_bytes()
+        except OSError:
+            # If host AV locked eicar.com on Windows
             if "eicar" in orig_name.lower():
                 data = EICAR_SIG
             else:
-                raise FileNotFoundError(f"Input file not found: {args.file}")
+                raise
     else:
-        # Default synthetic sample payload for uniform CLI runner
-        orig_name = "invoice_synthetic.exe"
-        data = b"MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00\xff\xff\x00\x00synthetic_sample_payload"
+        # Fallback for EICAR if quarantined by host AV
+        if "eicar" in orig_name.lower():
+            data = EICAR_SIG
+        else:
+            raise FileNotFoundError(f"Input file not found: {args.file}")
 
     sample_rec, event_rec, _ = vault.ingest(
         data=data,

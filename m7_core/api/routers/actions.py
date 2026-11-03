@@ -14,6 +14,21 @@ from m7_core.services.approval_service import (
 router = APIRouter(prefix="/api/v1", tags=["actions"])
 
 
+def _actor(current_user: dict) -> str:
+    """The authenticated JWT subject recorded as the actor in the audit chain.
+
+    A token without a subject must not fall back to a placeholder name: every approval
+    would then be attributed to an analyst who never touched the action.
+    """
+    identity = str(current_user.get("sub") or "").strip()
+    if not identity:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token carries no subject to record in the audit chain.",
+        )
+    return identity
+
+
 @router.post("/analyses/{analysis_id}/actions/{action_id}/approve", summary="Approve a pending response action")
 def approve_action(
     analysis_id: str,
@@ -22,7 +37,7 @@ def approve_action(
     db: Session = Depends(get_db),
 ):
     service = ApprovalService(db)
-    actor = current_user.get("username") or current_user.get("sub", "analyst")
+    actor = _actor(current_user)
     try:
         return service.approve_action(analysis_id, action_id, actor=actor)
     except ActionNotFoundError as e:
@@ -39,7 +54,7 @@ def reject_action(
     db: Session = Depends(get_db),
 ):
     service = ApprovalService(db)
-    actor = current_user.get("username") or current_user.get("sub", "analyst")
+    actor = _actor(current_user)
     try:
         return service.reject_action(analysis_id, action_id, actor=actor)
     except ActionNotFoundError as e:

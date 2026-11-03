@@ -1,0 +1,47 @@
+# TRAC platform dependencies for the full MVP in one virtualenv.
+#
+#   python -m venv .venv
+#   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+#
+# Every line below is imported by at least one module (M1-M8) or by the test
+# suite. The per-module requirements.txt files stay as module-local records;
+# this file is the reproducible entry point for the repository.
+
+# Web layer - M1 intake API, M7 core REST API, M8 console
+fastapi>=0.111
+uvicorn>=0.29
+python-multipart>=0.0.9
+pydantic>=2.7
+
+# Persistence and migrations - M7 (the only module that writes the database)
+sqlalchemy>=2.0
+alembic>=1.13
+
+# Authentication - M7 API bearer/module tokens
+python-jose[cryptography]>=3.3
+passlib[argon2]>=1.7
+
+# Contract validation - contract/, M7 contract loader
+jsonschema>=4.22
+pyyaml>=6.0
+
+# Sample intake - M1 encryption at rest, AES-encrypted MalwareBazaar archives
+cryptography>=42.0.0
+pyzipper>=0.3.6
+
+# Static analysis - M2 PE header, section, import and imphash parsing
+pefile>=2024.8.26
+
+# HTTP clients - M6 M7 connector, M3 CAPE adapter, M7 tests
+httpx>=0.27
+
+# Response exports - M6 STIX bundle export
+stix2>=3.0
+
+# Reporting - M8 PDF generation and the test that reads the PDF back
+reportlab>=4.0.0
+pypdf>=5.0.0
+
+# Test suite - M1/M3/M4/M5/M6/M7/M8 plus the async M7 upload tests
+pytest>=8.2
+pytest-asyncio>=0.23
