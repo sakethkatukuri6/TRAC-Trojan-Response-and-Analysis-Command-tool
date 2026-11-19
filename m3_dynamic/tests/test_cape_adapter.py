@@ -631,3 +631,26 @@ def test_environment_configuration_is_read_when_arguments_are_omitted(transport,
 
     assert result["status"] == "done"
     assert fake.calls[0]["url"] == f"{BASE}{STATUS_PATH}"
+
+
+def test_check_cape_health_unconfigured(lab):
+    lab.delenv("TRAC_CAPE_URL", raising=False)
+    lab.delenv("CAPE_URL", raising=False)
+    lab.delenv("CAPE_API_URL", raising=False)
+    health = ie.check_cape_health()
+    assert health["configured"] is False
+    assert health["online"] is False
+    assert health["status"] == "unconfigured"
+
+
+def test_check_cape_health_online(transport, lab):
+    lab.setenv("TRAC_CAPE_URL", f"{BASE}/apiv2")
+    lab.setenv("TRAC_CAPE_TOKEN", TOKEN)
+    transport({("GET", STATUS_PATH): [CAPE_STATUS]})
+    health = ie.check_cape_health()
+    assert health["configured"] is True
+    assert health["online"] is True
+    assert health["status"] == "ready"
+    assert health["version"] == "2.4-CAPE"
+    assert health["machines"]["total"] == 2
+

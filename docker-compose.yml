@@ -1,0 +1,60 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: trac-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-trac}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trac_secret_production_key_32b}
+      POSTGRES_DB: ${POSTGRES_DB:-trac_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trac-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-trac}:${POSTGRES_PASSWORD:-trac_secret_production_key_32b}@db:5432/${POSTGRES_DB:-trac_db}
+      MODULE_SECRET: ${MODULE_SECRET:-dev-module-secret-32-bytes-minimum!}
+      USER_SECRET: ${USER_SECRET:-dev-user-secret-32-bytes-minimum!!}
+      TRAC_CAPE_URL: ${TRAC_CAPE_URL:-}
+      TRAC_CAPE_TOKEN: ${TRAC_CAPE_TOKEN:-}
+    ports:
+      - "8000:8000"
+    command: ["python", "-m", "uvicorn", "m7_core.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  console:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trac-console
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-trac}:${POSTGRES_PASSWORD:-trac_secret_production_key_32b}@db:5432/${POSTGRES_DB:-trac_db}
+      MODULE_SECRET: ${MODULE_SECRET:-dev-module-secret-32-bytes-minimum!}
+      USER_SECRET: ${USER_SECRET:-dev-user-secret-32-bytes-minimum!!}
+      TRAC_CAPE_URL: ${TRAC_CAPE_URL:-}
+      TRAC_CAPE_TOKEN: ${TRAC_CAPE_TOKEN:-}
+    ports:
+      - "8088:8088"
+    command: ["python", "-m", "m8_ui_devops.cli", "--serve-ui", "--host", "0.0.0.0", "--port", "8088"]
+
+volumes:
+  pgdata:
+    driver: local

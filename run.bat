@@ -42,12 +42,12 @@ echo ===========================================================================
 echo.
 echo   [1] Run Full CI Gate Check (All Committed Modules)
 echo   [2] Run Contract Unit Test Suite (21 contract tests)
-echo   [3] Run Pytest on Available Modules (M4, M5, M6)
+echo   [3] Run Full Test Suite (Pytest across all modules)
 echo   [4] Check M4 (IOC Extraction) Contract Compliance
 echo   [5] Check M5 (Detection and Scoring) Contract Compliance
 echo   [6] Check M6 (Response Engine) Contract Compliance
 echo   [7] Check M7 (Core Orchestration) Contract Compliance
-echo   [8] Run CLIs to Regenerate Outputs (M4, M5, M6, M7)
+echo   [8] Run CLIs to Regenerate Outputs (M2, M3, M4, M5, M6, M7)
 echo   [9] Generate / Refresh Contract Stubs (M1 - M8)
 echo   [10] Start M7 Core REST API Server (Uvicorn port 8000)
 echo   [11] Launch SOC Analyst Web Dashboard (Port 8088 / Auto)
@@ -153,35 +153,16 @@ exit /b 0
 
 :CMD_TEST_ALL
 echo.
-echo [*] Running Pytest across active modules...
-set "OVERALL_ERR=0"
-
-echo --- Testing M4 (IOC Extraction) ---
-"%PYTEST_CMD%" -v m4_ioc\tests
-if %ERRORLEVEL% NEQ 0 set "OVERALL_ERR=1"
-
-echo.
-echo --- Testing M5 (Detection and Scoring) ---
-"%PYTEST_CMD%" -v m5_detection\tests
-if %ERRORLEVEL% NEQ 0 set "OVERALL_ERR=1"
-
-echo.
-echo --- Testing M6 (Response Engine Unit Tests) ---
-"%PYTEST_CMD%" -v m6_response\tests\test_approval_gate.py m6_response\tests\test_audit_chain.py m6_response\tests\test_cli.py m6_response\tests\test_exports.py m6_response\tests\test_planner.py
-if %ERRORLEVEL% NEQ 0 set "OVERALL_ERR=1"
-
-echo.
-echo --- Testing M7 (Core Persistence and CLI) ---
-"%PYTEST_CMD%" -v m7_core\tests\test_cli.py m7_core\tests\test_persistence.py
-if %ERRORLEVEL% NEQ 0 set "OVERALL_ERR=1"
-
-echo.
-if %OVERALL_ERR% NEQ 0 (
-    echo [-] Module Pytests encountered failures.
+echo [*] Running Pytest across entire platform (M1 - M8)...
+"%PYTEST_CMD%" -v
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo [-] Pytest suite encountered test failures.
     if "%~1"=="" pause & goto :MENU
     exit /b 1
 )
-echo [+] All Module Pytests: PASSED
+echo.
+echo [+] Full Platform Pytest Suite: PASSED
 if "%~1"=="" pause & goto :MENU
 exit /b 0
 
@@ -219,7 +200,7 @@ exit /b %ERRORLEVEL%
 :CMD_RUN_CLIS
 echo.
 echo [*] Executing CLIs to regenerate contract outputs...
-echo     M4/M5/M6 publish only the sections M7 stored for a real analysis,
+echo     M2-M6 publish only the sections M7 stored for a real analysis,
 echo     so the analysis UUID of a completed run is required.
 set "ANALYSIS_ID=%~2"
 if "!ANALYSIS_ID!"=="" set /p "ANALYSIS_ID=Analysis UUID recorded in M7: "
@@ -228,6 +209,12 @@ if "!ANALYSIS_ID!"=="" (
     if "%~1"=="" pause & goto :MENU
     exit /b 2
 )
+
+echo [*] Running M2 CLI...
+"%PYTHON_CMD%" -m m2_static.cli --analysis-id !ANALYSIS_ID! --out m2_static\contract_out\static.json
+
+echo [*] Running M3 CLI...
+"%PYTHON_CMD%" -m m3_dynamic.cli --analysis-id !ANALYSIS_ID! --out m3_dynamic\contract_out\dynamic.json
 
 echo [*] Running M4 CLI...
 "%PYTHON_CMD%" -m m4_ioc.cli --analysis-id !ANALYSIS_ID! --out m4_ioc\contract_out\iocs.json

@@ -1,7 +1,9 @@
 # Local Python environments and generated caches
 .venv/
+venv/
 __pycache__/
 *.py[cod]
+*$py.class
 .pytest_cache/
 
 # Local configuration, test reports, and coverage output
@@ -11,17 +13,26 @@ __pycache__/
 coverage.xml
 htmlcov/
 
-# Node tooling used by the M8 dashboard
+# Node tooling and build outputs
 node_modules/
 dist/
+m8_ui_devops/ui/dist/
 
 # SQLite databases
 *.db
 *.sqlite3
 
-# Secrets file
+# Secrets and keys
 .secrets
 .secrets*
+*.key
+*.vault
+vault.key
+vault_registry.json
+.vault_cache/
+m1_ingestion/data/vault/vault.key
+m1_ingestion/data/vault/*.vault
+m1_ingestion/data/vault/vault_registry.json
 
 # Runtime data and test reports
 data/

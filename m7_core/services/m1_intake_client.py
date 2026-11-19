@@ -35,7 +35,7 @@ class CappedStream(io.RawIOBase):
             self.bytes_read += len(chunk)
             if self.bytes_read > self.max_size:
                 raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                     detail=f"File exceeds the {self.max_size} byte upload cap"
                 )
         return chunk
@@ -85,11 +85,11 @@ class M1IntakeClient:
                     return resp.json()
                 elif resp.status_code == 413:
                     raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                         detail=f"File exceeds the {max_size} byte upload cap",
                     )
                 elif resp.status_code == 422:
-                    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=resp.json())
+                    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=resp.json())
                 else:
                     raise HTTPException(
                         status_code=status.HTTP_502_BAD_GATEWAY,

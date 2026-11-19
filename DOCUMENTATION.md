@@ -327,3 +327,35 @@ The repository contains automated contract verification tools in `contract/tools
 ### 3. Indicator Defanging Violations
 - **Symptom:** Validator fails with `SemanticError: Domain 'example.com' must be defanged`.
 - **Resolution:** Apply defanging rules before writing: `example.com` ➔ `example[.]com`, `http://` ➔ `hXXp://`.
+
+---
+
+## 9. Production Deployment & Airgapped Operations
+
+### Airgapped SOC Console (100% Offline)
+The SOC analyst dashboard (`m8_ui_devops/ui/standalone.html`) is self-contained and serves all third-party dependencies locally from `/vendor` without external internet access:
+- **Vendored Libraries:** React 18, ReactDOM 18, Babel Standalone, and Tailwind CSS in `m8_ui_devops/ui/vendor/`.
+- **Font Stack:** Native system fonts (`-apple-system`, `Segoe UI`, `Roboto`, `ui-monospace`, `Cascadia Code`).
+- **Launch Gates:** Dedicated compliance endpoints for `/privacy`, `/terms`, `/manifest.json`, and `/favicon.svg`.
+
+### Live Containment Connectors (M6)
+Module M6 supports deterministic containment planning and dual-control execution:
+- **`WindowsFirewallConnector`:** Generates PowerShell `New-NetFirewallRule` commands for blocking threat IPs and domains, and `Disable-NetAdapter` for host isolation.
+- **Rollback Automation:** Computes exact `Remove-NetFirewallRule` rollback commands for every action.
+- **Remediation Script Export:** Emits full, signed `.ps1` containment scripts for SOC analyst review before applying live system modifications.
+- **Approval Gate:** Blocks destructive execution (`quarantine`, `isolate_host`, `block_ip`, `block_domain`) in real mode unless verified with an operator approval token and cryptographic audit chain hash.
+
+### CAPEv2 Sandbox Monitoring
+- **Preflight & Heartbeat:** Checks sandbox reachability and token authentication before sample submission.
+- **Status Endpoint:** `GET /api/health/sandbox` returns sandbox online status, active worker machines, and queue depth.
+
+### Multi-Container Production Scaling
+Run TRAC against PostgreSQL with reverse proxy and persistent storage:
+```bash
+docker compose up -d
+```
+- **PostgreSQL 16:** Stateful relational database container with automated healthcheck.
+- **TRAC API (M7):** REST orchestrator on port 8000.
+- **TRAC Console (M8):** Analyst dashboard on port 8088.
+- **Reverse Proxy:** Production Nginx configuration with 105 MiB upload cap in `reverse_proxy/nginx.conf`.
+

@@ -69,18 +69,25 @@ class SampleVault:
         try:
             with open(self.registry_file, "w", encoding="utf-8") as f:
                 json.dump(self._registry, f, indent=2)
-        except Exception:
-            pass
+        except OSError as exc:
+            import logging
+            logging.getLogger(__name__).error("Failed to save vault registry to %s: %s", self.registry_file, exc)
 
     @staticmethod
     def _defang(data: bytes) -> bytes:
         """XOR defang bytes so they cannot be executed or trigger host AV."""
-        return bytes(b ^ DEFANG_XOR_KEY for b in data)
+        buf = bytearray(data)
+        for i in range(len(buf)):
+            buf[i] ^= DEFANG_XOR_KEY
+        return bytes(buf)
 
     @staticmethod
     def _refang(data: bytes) -> bytes:
         """Refang (restore original bytes) via inverse XOR."""
-        return bytes(b ^ DEFANG_XOR_KEY for b in data)
+        buf = bytearray(data)
+        for i in range(len(buf)):
+            buf[i] ^= DEFANG_XOR_KEY
+        return bytes(buf)
 
     def ingest(
         self,
