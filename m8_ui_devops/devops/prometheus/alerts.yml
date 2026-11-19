@@ -2,17 +2,27 @@ groups:
   - name: pipeline_alerts
     rules:
       - alert: StageFailureRateHigh
-        expr: rate(trac_stage_failures_total[5m]) > 0.05
+        expr: sum(rate(trac_stage_failures_total[5m])) > 0.05
         for: 2m
         labels:
           severity: critical
         annotations:
           summary: "Analysis stage failure rate exceeded 5% threshold"
 
-      - alert: DeadLetterQueueNotEmpty
-        expr: rabbitmq_queue_messages{queue="q.dlq"} > 0
-        for: 1m
+      - alert: HttpServerErrorRateHigh
+        expr: |
+          sum(rate(trac_http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(trac_http_requests_total[5m])) > 0.05
+        for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Analyses encountered non-retryable failure in Dead Letter Queue"
+          summary: "More than 5% of platform HTTP responses are server errors"
+
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A scraped TRAC service is not answering Prometheus"

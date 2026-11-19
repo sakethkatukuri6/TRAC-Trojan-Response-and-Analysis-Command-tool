@@ -30,6 +30,7 @@ from m4_ioc.extractor import extract_iocs
 from m5_detection.scoring_engine import score_analysis
 from m6_response.planner.response_planner import ResponsePlanner
 from m7_core.contract.loader import get_contract_version
+from m7_core.metrics import ANALYSES, STAGE_FAILURES
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +299,7 @@ def run_full_pipeline(
     for stage, stage_status in stages.items():
         if stage_status != "failed":
             continue
+        STAGE_FAILURES.labels(stage=stage).inc()
         if stage == "dynamic":
             code = "SANDBOX_FAILED"
             message = sandbox_error or "The configured sandbox did not return a result."
@@ -334,5 +336,7 @@ def run_full_pipeline(
 
     if pipeline_errors:
         doc["pipeline"]["errors"] = pipeline_errors
+
+    ANALYSES.labels(verdict=str(scoring_res["verdict"].get("label", "unknown"))).inc()
 
     return doc

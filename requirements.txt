@@ -45,6 +45,9 @@ stix2>=3.0
 reportlab>=4.0.0
 pypdf>=5.0.0
 
+# Observability - /metrics endpoints consumed by Prometheus (monitoring profile)
+prometheus-client>=0.20
+
 # Test suite - M1/M3/M4/M5/M6/M7/M8 plus the async M7 upload tests
 pytest>=8.2
 pytest-asyncio>=0.23

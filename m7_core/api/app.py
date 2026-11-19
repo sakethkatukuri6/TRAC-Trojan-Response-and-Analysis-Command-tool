@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from m7_core.contract.loader import get_openapi_spec, get_platform_version
 from m7_core.database import init_db
 from m7_core.api.routers import health, sections, actions, analyses, events, exports, auth_routes
+from m7_core.metrics import install_metrics_middleware, metrics_endpoint
 
 
 @asynccontextmanager
@@ -32,6 +33,9 @@ def create_app() -> FastAPI:
     app.include_router(events.router)
     app.include_router(exports.router)
     app.include_router(auth_routes.router)
+
+    install_metrics_middleware(app, service="m7-core-api")
+    app.add_api_route("/metrics", metrics_endpoint, methods=["GET"], include_in_schema=False)
 
     return app
 

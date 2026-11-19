@@ -69,12 +69,23 @@ def create_dashboard_app(host: str = DEFAULT_UI_HOST, port: int = DEFAULT_UI_POR
     pipeline and the finished document is persisted by M7, which owns
     pipeline and database state. M8 never writes analysis state itself.
     """
-    from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
+    from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
     from fastapi.middleware.cors import CORSMiddleware
     from sqlalchemy.orm import Session
 
+    from m7_core.api.auth import create_user_token
+    from m7_core.api.schemas import LoginRequest
     from m7_core.database import get_db
+    from m7_core.metrics import install_metrics_middleware, metrics_endpoint
     from m7_core.services.analysis_service import AnalysisService
+    from m8_ui_devops.auth import (
+        COOKIE_MAX_AGE_SECONDS,
+        COOKIE_NAME,
+        authenticate_user,
+        ensure_bootstrap_admin,
+        get_console_user,
+        require_console_user,
+    )
     from m7_core.services.pipeline_runner import (
         DEFAULT_ARCHIVE_PASSWORD,
         ArchiveRejected,
@@ -95,6 +106,9 @@ def create_dashboard_app(host: str = DEFAULT_UI_HOST, port: int = DEFAULT_UI_POR
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    install_metrics_middleware(app, service="m8-ui")
+    app.add_api_route("/metrics", metrics_endpoint, methods=["GET"], include_in_schema=False)
 
     def load_document(analysis_id: str, db: Session):
         doc = AnalysisService(db).get_analysis_document(analysis_id)
@@ -120,11 +134,40 @@ def create_dashboard_app(host: str = DEFAULT_UI_HOST, port: int = DEFAULT_UI_POR
         doc = load_document(analysis_id, db)
         return {"document": doc, "presentation": build_presentation(doc)}
 
+    @app.post("/api/auth/login", summary="Console operator login")
+    def console_login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
+        user = authenticate_user(db, req.username, req.password)
+        if not user:
+            raise HTTPException(status_code=401, detail="Incorrect username or password")
+        token = create_user_token(user["username"], user["role"])
+        response.set_cookie(
+            COOKIE_NAME,
+            token,
+            httponly=True,
+            samesite="lax",
+            max_age=COOKIE_MAX_AGE_SECONDS,
+            path="/",
+        )
+        return {"username": user["username"], "role": user["role"]}
+
+    @app.post("/api/auth/logout", summary="Clear the console session")
+    def console_logout(response: Response):
+        response.delete_cookie(COOKIE_NAME, path="/")
+        return {"ok": True}
+
+    @app.get("/api/auth/me", summary="Current console session")
+    def console_me(request: Request):
+        user = get_console_user(request)
+        if not user:
+            return {"authenticated": False}
+        return {"authenticated": True, "username": user.get("username"), "role": user.get("role")}
+
     @app.post("/api/samples/upload", summary="Analyse an uploaded sample")
     async def upload_sample_endpoint(
         file: UploadFile = File(...),
         archive_password: str = Form(DEFAULT_ARCHIVE_PASSWORD),
         db: Session = Depends(get_db),
+        operator: dict = Depends(require_console_user()),
     ):
         content = await file.read()
         if len(content) > MAX_FILE_SIZE:
@@ -220,9 +263,12 @@ def create_dashboard_app(host: str = DEFAULT_UI_HOST, port: int = DEFAULT_UI_POR
 def serve_dashboard(host: str = DEFAULT_UI_HOST, port: int = DEFAULT_UI_PORT, open_browser: bool = False):
     """Serve the web UI using FastAPI / uvicorn."""
     import uvicorn
-    from m7_core.database import init_db
+    from m7_core.database import SessionLocal, init_db
+    from m8_ui_devops.auth import ensure_bootstrap_admin
 
     init_db()
+    with SessionLocal() as bootstrap_db:
+        ensure_bootstrap_admin(bootstrap_db)
 
     actual_port = find_available_port(host, port)
     if actual_port != port:

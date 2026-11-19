@@ -1,3 +1,16 @@
+# TRAC platform stack.
+#
+# Secrets are fail-closed: `docker compose up` refuses to start unless
+# MODULE_SECRET, USER_SECRET and POSTGRES_PASSWORD are set. Copy .env.example
+# to .env and fill them in — never commit real values.
+#
+#   cp .env.example .env   # then edit
+#   docker compose up --build            # db + api + console
+#   docker compose --profile monitoring up -d grafana prometheus
+#
+# The sample vault and generated reports live in named volumes so they survive
+# container replacement; samples are never stored inside the repository.
+
 services:
   db:
     image: postgres:16-alpine
@@ -5,7 +18,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-trac}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trac_secret_production_key_32b}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required (see .env.example)}
       POSTGRES_DB: ${POSTGRES_DB:-trac_db}
     ports:
       - "5432:5432"
@@ -27,14 +40,19 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-trac}:${POSTGRES_PASSWORD:-trac_secret_production_key_32b}@db:5432/${POSTGRES_DB:-trac_db}
-      MODULE_SECRET: ${MODULE_SECRET:-dev-module-secret-32-bytes-minimum!}
-      USER_SECRET: ${USER_SECRET:-dev-user-secret-32-bytes-minimum!!}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-trac}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-trac_db}
+      MODULE_SECRET: ${MODULE_SECRET:?MODULE_SECRET is required (see .env.example)}
+      USER_SECRET: ${USER_SECRET:?USER_SECRET is required (see .env.example)}
+      VAULT_STORAGE_PATH: /data/vault
+      TRAC_REPORTS_DIR: /data/reports
       TRAC_CAPE_URL: ${TRAC_CAPE_URL:-}
       TRAC_CAPE_TOKEN: ${TRAC_CAPE_TOKEN:-}
     ports:
       - "8000:8000"
     command: ["python", "-m", "uvicorn", "m7_core.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    volumes:
+      - vault_data:/data/vault
+      - reports_data:/data/reports
 
   console:
     build:
@@ -46,15 +64,60 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-trac}:${POSTGRES_PASSWORD:-trac_secret_production_key_32b}@db:5432/${POSTGRES_DB:-trac_db}
-      MODULE_SECRET: ${MODULE_SECRET:-dev-module-secret-32-bytes-minimum!}
-      USER_SECRET: ${USER_SECRET:-dev-user-secret-32-bytes-minimum!!}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-trac}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-trac_db}
+      MODULE_SECRET: ${MODULE_SECRET:?MODULE_SECRET is required (see .env.example)}
+      USER_SECRET: ${USER_SECRET:?USER_SECRET is required (see .env.example)}
+      VAULT_STORAGE_PATH: /data/vault
+      TRAC_REPORTS_DIR: /data/reports
       TRAC_CAPE_URL: ${TRAC_CAPE_URL:-}
       TRAC_CAPE_TOKEN: ${TRAC_CAPE_TOKEN:-}
     ports:
       - "8088:8088"
     command: ["python", "-m", "m8_ui_devops.cli", "--serve-ui", "--host", "0.0.0.0", "--port", "8088"]
+    volumes:
+      - vault_data:/data/vault
+      - reports_data:/data/reports
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: trac-prometheus
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+    volumes:
+      - ./m8_ui_devops/devops/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: trac-grafana
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required (see .env.example)}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./m8_ui_devops/devops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./m8_ui_devops/devops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
 
 volumes:
   pgdata:
+    driver: local
+  vault_data:
+    driver: local
+  reports_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local

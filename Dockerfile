@@ -19,6 +19,13 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy platform source tree
 COPY . .
 
+# Data directories are volume mount points; pre-creating them lets the named
+# volumes inherit ownership by the unprivileged runtime user.
+RUN useradd --create-home --uid 10001 trac && \
+    mkdir -p /data/vault /data/reports && \
+    chown -R trac:trac /data
+USER trac
+
 # Expose M7 API (8000) and M8 Command Console (8088)
 EXPOSE 8000 8088
 
