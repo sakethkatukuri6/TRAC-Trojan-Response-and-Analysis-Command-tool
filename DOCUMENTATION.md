@@ -123,7 +123,7 @@ received ➔ static ➔ dynamic ➔ iocs ➔ scoring ➔ response ➔ report ➔
 ### Module 5: Detection & Scoring (`m5_detection`)
 - **Purpose:** Computes weighted threat scores and establishes the final threat verdict.
 - **Key Capabilities:**
-  - **Weighted Rule Scoring:** Adds the points of the factors whose evidence is present —
+  - **Weighted Rule Scoring:** Adds the points of the factors whose evidence is present:
     entropy/packing, process-injection, C2-networking, persistence, evasion, keylogging
     and first-pass signature match. Each factor's published `weight` is its ceiling share
     of the 100-point scale, and a sample whose factors claim more than 100 points has its
