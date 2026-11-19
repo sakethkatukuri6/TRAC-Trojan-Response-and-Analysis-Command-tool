@@ -138,7 +138,7 @@ checks - is covered in [CAPE_LOCAL_LAB.md](CAPE_LOCAL_LAB.md).
 ## Tests
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest m1_ingestion\tests m3_dynamic\tests m4_ioc\tests m5_detection\tests m6_response\tests m7_core\tests m8_ui_devops\tests -q
+.\.venv\Scripts\python.exe -m pytest m1_ingestion\tests m2_static\tests m3_dynamic\tests m4_ioc\tests m5_detection\tests m6_response\tests m7_core\tests m8_ui_devops\tests -q
 .\.venv\Scripts\python.exe -m unittest discover -s contract\tests -v
 .\.venv\Scripts\python.exe contract\tools\check_all.py --repo-root .
 ```

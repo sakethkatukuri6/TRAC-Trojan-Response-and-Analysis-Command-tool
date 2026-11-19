@@ -21,6 +21,10 @@ app = FastAPI(title="M1 Ingestion & Sample Vault Service", version=get_platform_
 vault = SampleVault()
 
 
+HTTP_413 = getattr(status, "HTTP_413_CONTENT_TOO_LARGE", getattr(status, "HTTP_413_REQUEST_ENTITY_TOO_LARGE", 413))
+HTTP_422 = getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", getattr(status, "HTTP_422_UNPROCESSABLE_ENTITY", 422))
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok", "service": "m1_ingestion"}

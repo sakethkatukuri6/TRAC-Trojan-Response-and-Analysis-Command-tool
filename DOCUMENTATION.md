@@ -189,13 +189,13 @@ received ➔ static ➔ dynamic ➔ iocs ➔ scoring ➔ response ➔ report ➔
   ```cmd
   run.bat ui
   ```
-  *(Or open [`m8_ui_devops\ui\dist\index.html`](file:///d:/all%20projects/TRAC-Trojan-Response-and-Analysis-Command-tool/m8_ui_devops/ui/dist/index.html) directly in any browser)*.
+  *(The console serves `m8_ui_devops/ui/standalone.html`, presenting the evidence-backed pipeline result)*.
 
 ---
 
 ## 5. Operations & CLI Reference (`run.bat`)
 
-The platform includes a zero-dependency Windows batch controller: [`run.bat`](file:///d:/all%20projects/TRAC-Trojan-Response-and-Analysis-Command-tool/run.bat).
+The platform includes a zero-dependency Windows batch controller: [`run.bat`](run.bat).
 
 ### Interactive Menu
 Double-click `run.bat` or run:
@@ -208,7 +208,7 @@ run.bat
 ============================================================================
   [1] Run Full CI Gate Check (All Committed Modules)
   [2] Run Contract Unit Test Suite (21 contract tests)
-  [3] Run Pytest on Available Modules (M4, M5, M6)
+  [3] Run Pytest on All Modules (M1 - M8)
   [4] Check M4 (IOC Extraction) Contract Compliance
   [5] Check M5 (Detection and Scoring) Contract Compliance
   [6] Check M6 (Response Engine) Contract Compliance

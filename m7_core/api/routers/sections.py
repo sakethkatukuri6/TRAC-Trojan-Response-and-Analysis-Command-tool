@@ -1,4 +1,4 @@
-﻿"""Section writing router enforcing module ownership, analysis existence, and JSON schema."""
+"""Section writing router enforcing module ownership, analysis existence, and JSON schema."""
 from __future__ import annotations
 
 from typing import Any
@@ -13,6 +13,8 @@ from m7_core.services.section_service import (
     SectionStateConflictError,
     AnalysisNotFoundError,
 )
+
+HTTP_422 = getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", getattr(status, "HTTP_422_UNPROCESSABLE_ENTITY", 422))
 
 router = APIRouter(prefix="/api/v1", tags=["sections"])
 
@@ -29,7 +31,7 @@ async def write_section(
         payload = await request.json()
     except Exception:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=HTTP_422,
             detail="Malformed JSON payload"
         )
 

@@ -11,16 +11,10 @@ cd /d "%~dp0"
 :: Detect Python executable: prefer local virtualenv if present
 if exist ".venv\Scripts\python.exe" (
     set "PYTHON_CMD=.venv\Scripts\python.exe"
-    set "UVICORN_CMD=.venv\Scripts\uvicorn.exe"
-    set "PYTEST_CMD=.venv\Scripts\pytest.exe"
 ) else if exist "venv\Scripts\python.exe" (
     set "PYTHON_CMD=venv\Scripts\python.exe"
-    set "UVICORN_CMD=venv\Scripts\uvicorn.exe"
-    set "PYTEST_CMD=venv\Scripts\pytest.exe"
 ) else (
     set "PYTHON_CMD=python"
-    set "UVICORN_CMD=uvicorn"
-    set "PYTEST_CMD=pytest"
 )
 
 :: Handle command-line arguments if provided
@@ -237,10 +231,28 @@ exit /b 0
 :CMD_STUBS
 echo.
 echo [*] Generating / refreshing contract stubs for all modules...
-for %%M in (M1 M2 M3 M4 M5 M6 M7 M8) do (
-    echo [+] Generating stub for %%M...
-    "%PYTHON_CMD%" contract\tools\stub_module.py %%M
-)
+echo [+] Generating stubs for M1...
+"%PYTHON_CMD%" contract\tools\stub_module.py M1 --out m1_ingestion\contract_out\stub.json
+"%PYTHON_CMD%" contract\tools\stub_module.py M1 --event --out m1_ingestion\contract_events\stub.json
+echo [+] Generating stubs for M2...
+"%PYTHON_CMD%" contract\tools\stub_module.py M2 --out m2_static\contract_out\stub.json
+"%PYTHON_CMD%" contract\tools\stub_module.py M2 --event --out m2_static\contract_events\stub.json
+echo [+] Generating stubs for M3...
+"%PYTHON_CMD%" contract\tools\stub_module.py M3 --out m3_dynamic\contract_out\stub.json
+"%PYTHON_CMD%" contract\tools\stub_module.py M3 --event --out m3_dynamic\contract_events\stub.json
+echo [+] Generating stubs for M4...
+"%PYTHON_CMD%" contract\tools\stub_module.py M4 --out m4_ioc\contract_out\stub.json
+"%PYTHON_CMD%" contract\tools\stub_module.py M4 --event --out m4_ioc\contract_events\stub.json
+echo [+] Generating stubs for M5...
+"%PYTHON_CMD%" contract\tools\stub_module.py M5 --out m5_detection\contract_out\stub.json
+"%PYTHON_CMD%" contract\tools\stub_module.py M5 --event --out m5_detection\contract_events\stub.json
+echo [+] Generating stubs for M6...
+"%PYTHON_CMD%" contract\tools\stub_module.py M6 --out m6_response\contract_out\stub.json
+"%PYTHON_CMD%" contract\tools\stub_module.py M6 --event --out m6_response\contract_events\stub.json
+echo [+] Generating stubs for M7...
+"%PYTHON_CMD%" contract\tools\stub_module.py M7 --out m7_core\contract_out\stub.json
+echo [+] Generating stubs for M8...
+"%PYTHON_CMD%" contract\tools\stub_module.py M8 --event --out m8_ui_devops\contract_events\stub.json
 echo.
 echo [+] Stubs refreshed.
 if "%~1"=="" pause & goto :MENU
@@ -252,7 +264,7 @@ echo [*] Starting M7 Core REST API server on http://localhost:8000 ...
 echo [*] OpenAPI Docs available at http://localhost:8000/docs
 echo [*] Press Ctrl+C to stop.
 echo.
-"%UVICORN_CMD%" m7_core.api.app:app --host 0.0.0.0 --port 8000 --reload
+"%PYTHON_CMD%" -m uvicorn m7_core.api.app:app --host 0.0.0.0 --port 8000 --reload
 if "%~1"=="" pause & goto :MENU
 exit /b 0
 
@@ -268,9 +280,13 @@ exit /b 0
 :CMD_INSTALL
 echo.
 echo [*] Installing dependencies from requirements files...
-"%PYTHON_CMD%" -m pip install -r contract\requirements.txt
-if exist "m6_response\requirements.txt" "%PYTHON_CMD%" -m pip install -r m6_response\requirements.txt
-if exist "m7_core\requirements.txt" "%PYTHON_CMD%" -m pip install -r m7_core\requirements.txt
+if exist "requirements.txt" (
+    "%PYTHON_CMD%" -m pip install -r requirements.txt
+) else (
+    "%PYTHON_CMD%" -m pip install -r contract\requirements.txt
+    if exist "m6_response\requirements.txt" "%PYTHON_CMD%" -m pip install -r m6_response\requirements.txt
+    if exist "m7_core\requirements.txt" "%PYTHON_CMD%" -m pip install -r m7_core\requirements.txt
+)
 echo.
 echo [+] Dependencies installed.
 if "%~1"=="" pause & goto :MENU
@@ -284,7 +300,7 @@ echo Commands:
 echo   gate          Run CI gate across all committed modules (default CI check)
 echo   gate-strict   Run strict CI gate requiring all M1-M8 outputs
 echo   contract-test Run contract unit test suite (21 schema and rule tests)
-echo   test          Run pytest across all active modules (M4, M5, M6, M7)
+echo   test          Run pytest across all modules (M1 - M8)
 echo   check-m4      Validate M4 output and event against contract
 echo   check-m5      Validate M5 output and event against contract
 echo   check-m6      Validate M6 output and event against contract

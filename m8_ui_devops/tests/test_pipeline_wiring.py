@@ -169,6 +169,18 @@ class DashboardContentTests(unittest.TestCase):
         self.assertIn("sandbox.label", self.html)
         self.assertNotIn(">Observed sandbox telemetry<", self.html)
 
+    def test_the_upload_dialog_can_supply_an_archive_password(self):
+        # The endpoint takes archive_password; a dialog that never sends it can only
+        # ever read a ZIP with the server default, and the analyst gets a bare 400.
+        self.assertIn('formData.append("archive_password"', self.html)
+
+    def test_a_rejection_reason_is_shown_readably_and_above_the_dialog(self):
+        self.assertIn("Upload rejected", self.html)
+        self.assertNotIn("JSON.stringify(payload.detail)", self.html)
+        # The modal backdrop is z-50; a notice without a higher layer is invisible.
+        self.assertIn("toast-layer", self.html)
+        self.assertIn(".toast-layer { z-index: 60; }", self.html)
+
     def test_engines_that_never_ran_are_not_labelled_as_empty_results(self):
         self.assertIn("yara_detail", self.html)
         self.assertIn("intel_detail", self.html)
@@ -340,6 +352,43 @@ class UploadRouteTests(unittest.TestCase):
             document["sample"]["sha256"], hashlib.sha256(EICAR).hexdigest()
         )
 
+    @staticmethod
+    def _aes_zip(password, name="payload.exe"):
+        import pyzipper
+
+        buffer = io.BytesIO()
+        with pyzipper.AESZipFile(
+            buffer, "w", compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES
+        ) as zf:
+            zf.setpassword(password.encode())
+            zf.writestr(name, EICAR)
+        return buffer.getvalue()
+
+    def test_an_archive_password_from_the_request_unlocks_a_non_default_zip(self):
+        # The server default is MalwareBazaar's word. A source that uses another one
+        # stays analysable as long as the analyst can supply it with the submission.
+        import hashlib
+
+        archive = self._aes_zip("victim")
+
+        rejected = self._upload("sample.zip", archive)
+        self.assertEqual(rejected.status_code, 400, rejected.text)
+        self.assertIn("ARCHIVE_UNREADABLE", rejected.json()["detail"])
+        self.assertEqual(self.client.get("/api/analyses").json(), [])
+
+        accepted = self._upload("sample.zip", archive, data={"archive_password": "victim"})
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        document = accepted.json()["document"]
+        self.assertEqual(document["sample"]["original_name"], "payload.exe")
+        self.assertEqual(document["sample"]["sha256"], hashlib.sha256(EICAR).hexdigest())
+
+    def test_the_supplied_password_is_not_echoed_back(self):
+        res = self._upload("sample.zip", self._aes_zip("secret-word"),
+                           data={"archive_password": "wrong-word"})
+        self.assertEqual(res.status_code, 400, res.text)
+        self.assertNotIn("secret-word", res.json()["detail"])
+        self.assertNotIn("wrong-word", res.json()["detail"])
+
     def test_a_real_pe_shows_parsed_sections_and_imports(self):
         from m7_core.tests.benign_pe import build_benign_pe, expected_imports
 
@@ -366,10 +415,11 @@ class UploadRouteTests(unittest.TestCase):
                 zf.writestr(name, data)
         return buffer.getvalue()
 
-    def _upload(self, filename, payload, content_type="application/zip"):
+    def _upload(self, filename, payload, content_type="application/zip", data=None):
         return self.client.post(
             "/api/samples/upload",
             files={"file": (filename, payload, content_type)},
+            data=data or {},
         )
 
     def test_unsafe_member_name_is_rejected_without_analysis(self):

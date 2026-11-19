@@ -1,4 +1,4 @@
-﻿"""M1 Intake client interface and HTTP implementation.
+"""M1 Intake client interface and HTTP implementation.
 
 Enforces M1 intake ownership per contract:
 - M1 Ingestion & Sample Vault owns sample intake and the 'sample' section.
@@ -13,6 +13,9 @@ import httpx
 from fastapi import HTTPException, status
 from m1_ingestion.vault import MAX_FILE_SIZE
 from m7_core.api.auth import create_module_token
+
+HTTP_413 = getattr(status, "HTTP_413_CONTENT_TOO_LARGE", getattr(status, "HTTP_413_REQUEST_ENTITY_TOO_LARGE", 413))
+HTTP_422 = getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", getattr(status, "HTTP_422_UNPROCESSABLE_ENTITY", 422))
 
 
 class CappedStream(io.RawIOBase):

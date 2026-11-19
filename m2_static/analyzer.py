@@ -10,7 +10,8 @@ Public API
 ----------
     analyze_static(data, file_type, filename) -> dict
 
-Dependencies: stdlib + pefile (installed in .venv).
+Dependencies: stdlib + pefile (installed in .venv). YARA is optional and opt-in;
+see ``m2_static/yara_scan.py``.
 """
 
 from __future__ import annotations
@@ -23,6 +24,8 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set, Tuple
 
 import pefile
+
+from m2_static import pe_evidence, yara_scan
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -63,8 +66,24 @@ _INTERESTING_PATTERNS: List[Tuple[str, re.Pattern]] = [
     ("base64",    re.compile(r"[A-Za-z0-9+/]{20,}={0,2}")),
 ]
 
-# Max interesting strings to keep
-_MAX_INTERESTING = 100
+# Max interesting strings to keep, and per category.
+#
+# A flat cap on the first matches wins the race to a noisy binary: one PE with a
+# few hundred base64-shaped identifier strings would fill the budget before the
+# registry key or mutex that M4 needs ever got published. So each category gets its
+# own quota and the global cap only bounds the total.
+_MAX_INTERESTING = 250
+_CATEGORY_QUOTA: Dict[str, int] = {
+    "url": 60,
+    "ip": 60,
+    "registry": 60,
+    "mutex": 60,
+    "http_hdr": 40,
+    "filepath": 40,
+    "unc_path": 30,
+    "crypto": 15,
+    "base64": 15,
+}
 # Max length per interesting string
 _MAX_STR_LEN = 512
 
@@ -112,6 +131,18 @@ def _defang_string(s: str) -> str:
         return _defang_ip(ip)
     s = _IP_RE.sub(_replace_ip, s)
     return s
+
+
+def _clamp_string(s: str, max_len: int = _MAX_STR_LEN) -> str:
+    """Clamp string to max_len, ensuring severed defang markers are cleaned."""
+    if len(s) <= max_len:
+        return s
+    trimmed = s[:max_len]
+    if trimmed.endswith("[."):
+        trimmed = trimmed[:-2]
+    elif trimmed.endswith("["):
+        trimmed = trimmed[:-1]
+    return trimmed
 
 
 # ---------------------------------------------------------------------------
@@ -165,26 +196,36 @@ def _classify_interesting(s: str) -> Optional[str]:
     return None
 
 
+def _iter_strings(data: bytes) -> List[str]:
+    """Every printable ASCII and UTF-16-LE string in *data*, in file order."""
+    return _extract_ascii_strings(data) + _extract_unicode_strings(data)
+
+
 def _extract_strings_section(data: bytes) -> dict:
     """Build the ``strings`` contract object from raw file bytes."""
-    ascii_strs = _extract_ascii_strings(data)
-    unicode_strs = _extract_unicode_strings(data)
-    all_strings = ascii_strs + unicode_strs
+    all_strings = _iter_strings(data)
     total_count = len(all_strings)
 
-    # De-duplicate interesting strings while preserving order
+    # Bucket by category, de-duplicate on the defanged value, and hold each bucket
+    # to its own quota so a flood of one kind cannot evict every other kind.
+    taken: Dict[str, int] = {}
     seen: Set[str] = set()
     interesting: List[str] = []
     for s in all_strings:
-        if _classify_interesting(s) is not None:
-            # Truncate and defang
-            truncated = s[:_MAX_STR_LEN]
-            defanged = _defang_string(truncated)
-            if defanged not in seen:
-                seen.add(defanged)
-                interesting.append(defanged)
-            if len(interesting) >= _MAX_INTERESTING:
-                break
+        tag = _classify_interesting(s)
+        if tag is None:
+            continue
+        quota = _CATEGORY_QUOTA.get(tag, 10)
+        if taken.get(tag, 0) >= quota or len(interesting) >= _MAX_INTERESTING:
+            continue
+        # Defang first, then clamp to _MAX_STR_LEN so defanging expansion
+        # (e.g. bare IP dots expanding to "[.]") cannot exceed schema maxLength.
+        defanged = _clamp_string(_defang_string(s[:_MAX_STR_LEN]))
+        if defanged in seen:
+            continue
+        seen.add(defanged)
+        interesting.append(defanged)
+        taken[tag] = taken.get(tag, 0) + 1
 
     return {
         "count": total_count,
@@ -201,16 +242,11 @@ def _extract_strings_section(data: bytes) -> dict:
 
 def _extract_urls(data: bytes) -> List[str]:
     """Extract and defang all URLs found in the binary data."""
-    ascii_strs = _extract_ascii_strings(data)
-    unicode_strs = _extract_unicode_strings(data)
-    all_strings = ascii_strs + unicode_strs
-
     seen: Set[str] = set()
     urls: List[str] = []
-    for s in all_strings:
+    for s in _iter_strings(data):
         for m in _URL_RE.finditer(s):
-            raw_url = m.group(0)
-            defanged = _defang_url(raw_url)
+            defanged = _defang_url(m.group(0))
             if defanged not in seen:
                 seen.add(defanged)
                 urls.append(defanged)
@@ -218,62 +254,26 @@ def _extract_urls(data: bytes) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# Packer detection
+# Packer indicators
 # ---------------------------------------------------------------------------
+#
+# The reading of the evidence lives in ``m2_static.pe_evidence`` so that M5 scores
+# exactly the tokens M2 publishes. M2's job is to choose which of them belong in the
+# contract's ``static.packers`` field: the tool signatures and the packing signs,
+# not the structural anomalies, which are not packers and are reported by M5 directly.
 
 
-def _detect_packers(data: bytes, pe: Optional[pefile.PE] = None) -> List[str]:
-    """Heuristic packer / protector detection.
+def _detect_packers(data: bytes, pe: Optional[pefile.PE] = None,
+                    evidence: Optional[pe_evidence.PeEvidence] = None) -> List[str]:
+    """Packer/protector indicators for ``static.packers``.
 
-    Checks:
-    1. UPX signature in section names or raw bytes.
-    2. High-entropy .text section (> 7.0) heuristic.
-    3. Non-standard section names that don't start with ``'.'``.
+    Without a parsed header only container banners can be read, so the non-PE path
+    stays honest instead of guessing at sections it cannot see.
     """
-    packers: List[str] = []
-    found_upx = False
-    high_entropy_text = False
-    anomalous_sections: List[str] = []
-
-    # Check raw bytes for UPX magic
-    if b"UPX!" in data:
-        found_upx = True
-
-    if pe is not None:
-        for section in pe.sections:
-            try:
-                name = section.Name.rstrip(b"\x00").decode("utf-8", errors="replace").strip()
-            except Exception:
-                name = ""
-
-            # UPX section names
-            if "UPX" in name.upper():
-                found_upx = True
-
-            # High-entropy .text
-            if name.lower() == ".text":
-                try:
-                    ent = section.get_entropy()
-                    if ent > 7.0:
-                        high_entropy_text = True
-                except Exception:
-                    pass
-
-            # Anomalous section names (non-empty, not starting with '.')
-            if name and not name.startswith("."):
-                lower_name = name.lower()
-                # Skip UPX-related names (already captured)
-                if "upx" not in lower_name:
-                    anomalous_sections.append(name)
-
-    if found_upx:
-        packers.append("UPX")
-    if high_entropy_text:
-        packers.append("high_entropy_packed")
-    for sec_name in anomalous_sections:
-        packers.append(f"anomalous_section:{sec_name}")
-
-    return packers
+    if pe is None:
+        return pe_evidence.container_indicators(data, evidence)
+    ev = evidence if evidence is not None else pe_evidence.collect_pe_evidence(data, pe)
+    return list(ev.packers)
 
 
 # ---------------------------------------------------------------------------
@@ -440,10 +440,16 @@ def analyze_static(data: bytes, file_type: str, filename: str = "") -> dict:
         "entropy": entropy,
         "strings": strings_section,
         "embedded_urls": embedded_urls,
-        # `yara_matches` and `macros` are omitted while no YARA ruleset and no macro
-        # parser exist in this module. Emitting [] would claim "evaluated, nothing
-        # matched"; consumers treat a missing key as not assessed.
+        # `macros` is omitted, not empty: no macro parser exists in this module.
     }
+
+    # -- Optional local YARA --
+    # Published only when the engine actually ran. Absent means "not assessed",
+    # [] means "ruleset compiled, nothing matched" - M8 renders those two
+    # differently and M5's confidence depends on the distinction.
+    yara_matches, _yara_result = yara_scan.scan_for_section(data)
+    if yara_matches is not None:
+        result["yara_matches"] = yara_matches
 
     # -- PE-specific analysis --
     if file_type == "pe":
@@ -452,17 +458,17 @@ def analyze_static(data: bytes, file_type: str, filename: str = "") -> dict:
             result["pe"] = pe_info
             result["packers"] = _detect_packers(data, pe_obj)
             pe_obj.close()
-        except pefile.PEFormatError as exc:
+        except pefile.PEFormatError:
             result["status"] = "failed"
-            result["packers"] = []
+            result["packers"] = _detect_packers(data)
             # Still return whatever we've gathered (entropy, strings, etc.)
             return result
-        except Exception as exc:
+        except Exception:
             result["status"] = "failed"
-            result["packers"] = []
+            result["packers"] = _detect_packers(data)
             return result
     else:
-        # Non-PE: still attempt packer byte-scan
+        # Non-PE: packer banners are still readable from the container.
         result["packers"] = _detect_packers(data)
 
     return result
