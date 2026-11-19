@@ -32,6 +32,9 @@ pyzipper>=0.3.6
 # Static analysis - M2 PE header, section, import and imphash parsing
 pefile>=2024.8.26
 
+# Static analysis - M2 YARA rule matching (m2_static/yara_scan.py)
+yara-python>=4.5
+
 # HTTP clients - M6 M7 connector, M3 CAPE adapter, M7 tests
 httpx>=0.27
 
