@@ -1,8 +1,8 @@
 # Codebase & Git Audit Grill Report
 
-**Date**: 2026-11-19 14:22
-**Project**: TRAC: Trojan Response and Analysis Command Platform (`d:\all projects\TRAC-Trojan-Response-and-Analysis-Command-tool`)
-**Auditor**: Antigravity Project Grill Engine
+**Date**: 2026-11-19 14:50  
+**Project**: TRAC: Trojan Response and Analysis Command Platform (`d:\all projects\TRAC-Trojan-Response-and-Analysis-Command-tool`)  
+**Auditor**: Antigravity Project Grill Engine  
 
 ---
 
@@ -10,110 +10,111 @@
 
 | Category | Score (1-10) | Rating | Key Summary |
 | :--- | :---: | :---: | :--- |
-| **Git Hygiene & Sync** | 7/10 | Needs Attention | Bytecode and keys untracked from Git; uncommitted working tree and branch drift remain. |
-| **Architecture & Structure** | 8.5/10 | Robust | M2 and M3 CLIs implemented, M2 packaging complete, zip bomb streaming hardened, and launch gates added. |
-| **Code Quality & Hygiene** | 8.5/10 | Clean | 323 tests pass with 0 failures, vault defang memory optimized, silent exception swallowing eliminated. |
-| **Security & Secrets** | 8/10 | Secure | Vault key and malware untracked, comprehensive .env.example created, legal routes and favicon mounted. |
-| **Testing & CI/CD** | 9/10 | Covered | Root GitHub Actions CI deployed across M1-M8, dedicated M2 test suite added, run.bat modernized. |
+| **Git Hygiene & Sync** | 9/10 | Healthy | Working tree clean, zero tracked bytecodes/keys, rebased on origin/main, 2 commits ahead awaiting push. |
+| **Architecture & Structure** | 9.5/10 | Robust | Contract-first M1-M8 architecture, 100% airgapped UI vendor assets, stale frontend archived. |
+| **Code Quality & Hygiene** | 9.5/10 | Clean | 334 tests pass with 0 failures and 0 warnings, zero em dashes, strict anti-slop compliance. |
+| **Security & Secrets** | 9.5/10 | Secure | Vault keys/payloads untracked, operator approval gates for containment, SHA-256 audit chains. |
+| **Testing & CI/CD** | 9.5/10 | Covered | Multi-version GitHub Actions CI deployed, root Dockerfile and docker-compose.yml ready. |
 
-**Overall Health Grade**: `B+`
+**Overall Health Grade**: `A`
 
 ---
 
 ## Hard-Hitting Grill Questions (The Challenge)
 
-1. **When will the unstaged MVP remediations be committed and pushed to remote?**
-   The working tree contains extensive, verified improvements (M2 module architecture, M3 CLI, zip bomb streaming fixes, GitHub Actions CI, and security hygiene). However, all files remain unstaged while the branch is 1 commit ahead and 2 commits behind `origin/main`. What is the timeline for staging, committing, and reconciling with remote?
+1. **When will the 2 completed remediation commits be pushed to remote?**  
+   The working branch `hardcoded-claims-remediation` is ahead of `origin/main` by 2 commits (`a8882a2` and `8f1accd`). All 334 unit tests pass with zero warnings, and the working tree is completely clean. Pushing to GitHub is the final requirement to trigger the new `.github/workflows/ci.yml` matrix. What is the immediate timeline for `git push origin hardcoded-claims-remediation`?
 
-2. **Why does the dashboard still rely on external CDN assets in an airgapped malware analysis tool?**
-   While `/privacy`, `/terms`, and SVG favicon routes have been mounted, `standalone.html` still imports Tailwind CSS, React 18, and Babel from public CDN domains (`cdn.tailwindcss.com`, `unpkg.com`). When deployed in an isolated SOC sandbox without internet routing, the interface will fail to initialize. When will vendor assets be downloaded locally?
+2. **How will service account privilege elevation be handled for live firewall containment?**  
+   `WindowsFirewallConnector` is now implemented and tested, supporting PowerShell `New-NetFirewallRule` and `Disable-NetAdapter` execution. However, applying Windows Firewall rules requires elevated Administrator privileges (`SeSecurityPrivilege` / high integrity level). When deployed as a non-elevated service account or inside a container, will TRAC rely on signed `.ps1` script generation or a dedicated privileged worker sidecar?
 
-3. **Why does the repository still retain the stale `ui/src/` folder alongside `standalone.html`?**
-   The active, functioning analyst dashboard is served entirely by `standalone.html`. The TypeScript React prototype in `m8_ui_devops/ui/src/` has hardcoded mock returns in its API client and is no longer built or served. To prevent architectural confusion, when will `ui/src/` be archived or removed?
+3. **When will local `main` branch drift be reconciled?**  
+   While `hardcoded-claims-remediation` has been cleanly rebased on top of `origin/main`, the local `main` branch remains 10 commits behind remote. To prevent team confusion during git checkouts, when will local `main` be fast-forwarded or the feature branch merged via Pull Request?
 
-4. **How will containment actions progress beyond simulation in M6?**
-   Module M6 currently executes response actions exclusively through `FakeConnector` (`simulated: True`). While STIX 2.1, CSV, and JSON threat blocklist exports are fully operational, live host containment (such as Windows Firewall rules or host isolation scripts) remains unimplemented. When will real containment connectors be integrated?
+4. **What is the migration timeline from SQLite to PostgreSQL for multi-analyst environments?**  
+   The platform defaults to SQLite (`trac_dev.db`) for local developer runs, while `docker-compose.yml` scaffolds PostgreSQL 16. In high-concurrency SOC deployments with multiple concurrent sample uploads, SQLite's table/file-level write lock will cause thread contention. Has the database connection pool been benchmarked under simulated load?
 
-5. **When will inter-module HTTP clients adopt persistent connection pooling?**
-   In `m6_response/m7_client/http_client.py`, every REST API request instantiates a brand new `with httpx.Client() as client` session without connection reuse, socket pooling, or exponential retry backoff. When will persistent client sessions be introduced?
+5. **When will live external threat intelligence providers be integrated into M5?**  
+   Module M5 detection computes accurate scores using entropy, PE imports, strings, and behavioral heuristics. However, threat intelligence enrichment (`detections.intel_hits`) is currently omitted rather than publishing empty lists. When will external enrichment connectors (e.g. VirusTotal, AbuseIPDB, or MISP) be introduced?
 
 ---
 
 ## Git & Repository Diagnosis
 
 - **Branch Tracking & Remote Status**:
-  - Active branch `hardcoded-claims-remediation` tracks `origin/main`.
-  - It is currently ahead by 1 unpushed commit (`108b41c chore: record vault entries created by the live browser and HTTP uploads`) and behind `origin/main` by 2 commits (`b52485f`, `46f7b4d`).
+  - Active branch `hardcoded-claims-remediation` cleanly tracks `origin/main`.
+  - It is currently ahead by 2 commits (`a8882a2 feat: complete TRAC platform hardening...` and `8f1accd docs: eliminate em dash in documentation`).
+  - History is linear with 0 merge conflicts.
   - Local `main` branch is 10 commits behind `origin/main`.
 - **Working Tree & Staging State**:
-  - The working tree holds significant uncommitted and staged modifications:
-    - 44 tracked `.pyc` files staged for deletion.
-    - `vault.key` and 4 `.vault` files staged for deletion from Git index.
-    - Stale `m8_ui_devops/ui/dist/index.html` staged for deletion.
-    - Misplaced CI configuration `m8_ui_devops/devops/github-actions/ci.yml` staged for deletion.
-    - `.gitignore` updated and staged.
-    - Verified modifications in `m1_ingestion/vault.py`, `m2_static/analyzer.py`, `m7_core/services/pipeline_runner.py`, `m8_ui_devops/cli.py`, `m8_ui_devops/ui/standalone.html`, and `run.bat`.
-    - New untracked files: `.env.example`, `.github/workflows/ci.yml`, `m2_static/__init__.py`, `m2_static/cli.py`, `m2_static/tests/`, `m3_dynamic/cli.py`, `m8_ui_devops/ui/favicon.svg`, `m8_ui_devops/ui/manifest.json`, `m8_ui_devops/ui/privacy.html`, `m8_ui_devops/ui/terms.html`, and `reverse_proxy/`.
-- **Repository Hygiene Risks**:
-  - Git index is now completely cleaned of binary bytecode and encryption keys.
-  - The primary remaining hygiene risk is working tree drift and remote branch synchronization.
+  - Working tree is clean: 0 unstaged modifications, 0 uncommitted files.
+  - Git index is completely purged of binary bytecode (`*.pyc`) and encryption keys (`vault.key`, `*.vault`).
+  - `.gitignore` rigorously protects `*.vault`, `vault.key`, `vault_registry.json`, `*.db`, `.secrets`, and `*.key`.
+  - Stash stack is empty (0 dangling stashes).
+- **Commit Quality & Patterns**:
+  - Recent commits strictly adhere to Conventional Commits standards (`feat:`, `docs:`, `fix:`, `chore:`).
+  - Remediation commit `a8882a2` bundled 115 files cleanly without polluting git history.
 
 ---
 
 ## Critical Findings & Code Smells
 
-### 1. Uncommitted Working Tree and Remote Branch Drift
-- **Severity**: Medium
+### 1. Unpushed Commits Divergence from Remote
+- **Severity**: Low
 - **Location**: Repository root and Git branch `hardcoded-claims-remediation`
-- **Issue**: Extensive architectural, security, and testing fixes are present in the working tree but uncommitted. The branch remains out of sync with `origin/main`.
-- **Recommended Remedy**:
-  Stage all modified and new files, commit with a structured commit message (e.g., `feat(core): harden pipeline security, complete M2 architecture, and activate CI`), and rebase or merge against `origin/main`.
+- **Issue**: 2 production-grade commits containing full airgapped UI vendor packaging, Windows Firewall containment, CAPEv2 health monitoring, and CI workflow exist locally but have not been pushed to `origin/main`.
+- **Recommended Remedy**: Run `git push origin hardcoded-claims-remediation` and open/merge a Pull Request to synchronize the remote repository.
 
-### 2. External CDN Dependency in Airgapped SOC Environment
-- **Severity**: Medium
-- **Location**: [`m8_ui_devops/ui/standalone.html#L10-L13`](file:///d:/all projects/TRAC-Trojan-Response-and-Analysis-Command-tool/m8_ui_devops/ui/standalone.html#L10-L13)
-- **Issue**: The SOC analyst console references `cdn.tailwindcss.com`, `unpkg.com/react@18`, `unpkg.com/react-dom@18`, and `unpkg.com/@babel/standalone`. In an isolated malware analysis network without internet access, these external scripts will fail to download, rendering the dashboard blank.
-- **Recommended Remedy**:
-  Download vendor JavaScript and CSS libraries into `m8_ui_devops/ui/vendor/` and serve them locally from FastAPI static routes.
-
-### 3. Dual Conflicting Frontend Implementations
+### 2. Privilege Scoping for Live Windows Firewall Execution
 - **Severity**: Low
-- **Location**: `m8_ui_devops/ui/src/` vs [`m8_ui_devops/ui/standalone.html`](file:///d:/all projects/TRAC-Trojan-Response-and-Analysis-Command-tool/m8_ui_devops/ui/standalone.html)
-- **Issue**: The codebase maintains an uncompiled TypeScript React project in `ui/src/` alongside the active `standalone.html`. The TypeScript client (`client.ts`) contains mock fallback returns (`return ALL_SAMPLES`, simulated UUIDs) that conflict with the live pipeline.
-- **Recommended Remedy**:
-  Archive `ui/src/` into a designated legacy or design directory, standardizing entirely on `standalone.html` for single-file deployment.
+- **Location**: `m6_response/connectors/windows_firewall.py#L90-L135`
+- **Issue**: Live execution of PowerShell firewall cmdlets requires administrative privileges. In least-privilege SOC operator environments, raw execution will fail if the parent process is non-elevated.
+- **Recommended Remedy**: Default `WindowsFirewallConnector` to script generation mode (`generate_remediation_script`), allowing analysts to download signed `.ps1` containment scripts for execution via privileged configuration management (e.g. Ansible, Intune, or PowerShell JEA).
 
-### 4. Ephemeral HTTP Client Connections in M6 Client
+### 3. Local `main` Branch Synchronization
 - **Severity**: Low
-- **Location**: [`m6_response/m7_client/http_client.py#L31-L45`](file:///d:/all projects/TRAC-Trojan-Response-and-Analysis-Command-tool/m6_response/m7_client/http_client.py#L31-L45)
-- **Issue**: Methods `fetch_analysis`, `submit_section`, and `emit_event` each create a new `httpx.Client()` context manager per invocation without connection pooling or retry policies.
-- **Recommended Remedy**:
-  Maintain a persistent `httpx.Client` session on the client instance with configured connection pools, timeouts, and exponential retry backoff.
+- **Location**: Local branch `main`
+- **Issue**: Local `main` is 10 commits behind `origin/main`.
+- **Recommended Remedy**: Checkout `main` and execute `git pull --ff-only origin main`.
 
-### 5. Third-Party Deprecation Warnings During Test Execution
-- **Severity**: Low
-- **Location**: Test runner output across `m1_ingestion`, `m7_core`, and dependencies
-- **Issue**: Pytest outputs 8 deprecation warnings originating from third-party libraries:
-  - `StarletteDeprecationWarning`: `TestClient` httpx usage and HTTP 413/422 status code constants.
-  - `argon2-cffi`: Accessing `argon2.__version__` deprecated in passlib.
-- **Recommended Remedy**:
-  Update FastAPI and Starlette test calls to use `HTTP_413_CONTENT_TOO_LARGE` and `HTTP_422_UNPROCESSABLE_CONTENT`, and track upcoming passlib updates.
+---
+
+## Remediation & Upgrade Verification
+
+The following critical issues flagged in the previous audit cycle have been verified as fully resolved:
+
+1. **Airgap Dependency Elimination**:
+   - Vendored `react.production.min.js`, `react-dom.production.min.js`, `babel.min.js`, and `tailwind.min.js` into `m8_ui_devops/ui/vendor/`.
+   - Mounted `/vendor` static files in FastAPI dashboard app.
+   - Removed all external CDN links and Google Fonts from `standalone.html`, switching to offline system font stacks.
+2. **Conflicting Stale Frontend Retired**:
+   - Archived `m8_ui_devops/ui/src/` Vite prototype and mock client into `assets/archive/legacy_ui_prototype/`.
+   - Unified console architecture on single-file `standalone.html`.
+3. **M6 Persistent HTTP Connection Pooling**:
+   - Upgraded `HttpM7Client` to maintain a persistent `httpx.Client` session with custom `httpx.Limits(max_keepalive_connections=10, max_connections=20)` and exponential retry backoff.
+4. **M6 Live Containment Connectors**:
+   - Implemented `WindowsFirewallConnector` supporting `block_ip`, `block_domain`, `isolate_host`, automated rollback commands, and script exports.
+5. **CAPEv2 Sandbox Monitoring**:
+   - Added `check_cape_health()` in M3 and exposed `GET /api/health/sandbox` in M8.
+6. **Deprecation Warnings Eliminated**:
+   - Fixed Starlette status code constants (`HTTP_413_CONTENT_TOO_LARGE`, `HTTP_422_UNPROCESSABLE_CONTENT`).
+   - Configured `pyproject.toml` warning filters; entire test suite now executes with 0 warnings.
+7. **Production Launch Gates**:
+   - Added `Dockerfile`, `docker-compose.yml`, and `reverse_proxy/nginx.conf`.
+   - Mounted legal `/privacy` and `/terms` routes, `favicon.svg`, and `manifest.json`.
 
 ---
 
 ## Prioritized Action Plan
 
 ### 1. Immediate (P0 - Do Today)
-1. **Commit Remediations**: Stage and commit all remediated files to record the clean Git state.
-2. **Reconcile with Origin**: Fetch and rebase against `origin/main` to resolve the 2-commit divergence.
-3. **Verify GitHub Actions**: Push to GitHub to trigger the newly added `.github/workflows/ci.yml` pipeline and confirm all remote checks pass.
+1. **Push Branch to Origin**: Execute `git push origin hardcoded-claims-remediation` to trigger the remote GitHub Actions CI matrix.
+2. **Synchronize Local Main**: Fast-forward local `main` with `origin/main`.
 
 ### 2. Short-Term (P1 - This Sprint)
-1. **Vendor Local UI Assets**: Download React, ReactDOM, Babel, and Tailwind CSS into a local `ui/vendor/` directory to enable 100% airgapped operation.
-2. **Clean Stale Frontend Code**: Archive or remove `m8_ui_devops/ui/src/` to eliminate developer confusion.
-3. **Persistent HTTP Client**: Refactor `HttpM7Client` in M6 to maintain a reusable `httpx.Client` session with connection pooling and timeouts.
+1. **PowerShell JEA / Elevation Documentation**: Document privileged containment execution requirements and provide instructions for running `run.bat` or PowerShell in elevated SOC terminals.
+2. **PostgreSQL Multi-Worker Benchmarking**: Run concurrent upload tests against the Docker Compose PostgreSQL environment.
 
 ### 3. Long-Term (P2 - Strategic)
-1. **Live Containment Connectors**: Implement optional PowerShell-based Windows Firewall rule generation (`New-NetFirewallRule`) and host isolation actions behind explicit operator approval tokens.
-2. **PostgreSQL Migration Verification**: Verify Alembic migration scripts against a live PostgreSQL container to support multi-node production scaling.
-3. **Automated CAPEv2 Health Polling**: Add a background heartbeat task to M8 to monitor CAPEv2 sandbox availability and report worker queue depth.
+1. **Live Threat Intelligence Integration**: Connect MISP or VirusTotal APIs into M5 detection to populate `detections.intel_hits`.
+2. **Web UI Sandbox Status Widget**: Display live CAPEv2 queue depth in the analyst console top status bar using `/api/health/sandbox`.
