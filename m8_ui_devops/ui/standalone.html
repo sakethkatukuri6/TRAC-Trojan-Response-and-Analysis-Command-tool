@@ -116,7 +116,11 @@
       const [views, setViews] = useState({});
       const [selectedId, setSelectedId] = useState(null);
       const [activeTab, setActiveTab] = useState(() => getQueryParam("tab", "overview"));
-      const [role, setRole] = useState("analyst");
+      const [session, setSession] = useState(null);
+      const [loginOpen, setLoginOpen] = useState(false);
+      const [loginUsername, setLoginUsername] = useState("");
+      const [loginPassword, setLoginPassword] = useState("");
+      const [loginError, setLoginError] = useState(null);
       const [toast, setToast] = useState(null);
       const [isUploadOpen, setIsUploadOpen] = useState(false);
       const [uploadLoading, setUploadLoading] = useState(false);
@@ -146,6 +150,45 @@
       const copyToClipboard = (text) => {
         navigator.clipboard.writeText(text);
         showToast("Copied: " + String(text).slice(0, 16) + "...");
+      };
+
+      const refreshSession = async () => {
+        try {
+          const res = await fetch("/api/auth/me");
+          if (res.ok) setSession(await res.json());
+        } catch (err) { /* health indicator already reports API state */ }
+      };
+
+      useEffect(() => { refreshSession(); }, []);
+
+      const handleLogin = async (e) => {
+        e.preventDefault();
+        setLoginError(null);
+        try {
+          const res = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: loginUsername, password: loginPassword }),
+          });
+          const payload = await res.json().catch(() => null);
+          if (!res.ok) {
+            setLoginError((payload && payload.detail) || "Login failed (HTTP " + res.status + ")");
+            return;
+          }
+          setSession({ authenticated: true, username: payload.username, role: payload.role });
+          setLoginOpen(false);
+          setLoginUsername("");
+          setLoginPassword("");
+          showToast("Signed in as " + payload.username + " (" + payload.role + ")");
+        } catch (err) {
+          setLoginError("Login request failed: " + err.message);
+        }
+      };
+
+      const handleLogout = async () => {
+        try { await fetch("/api/auth/logout", { method: "POST" }); } catch (err) {}
+        setSession(null);
+        showToast("Signed out.");
       };
 
       const loadAnalysis = async (id) => {
@@ -279,16 +322,25 @@
                   M7 {apiOnline ? "LIVE" : "OFFLINE"}
                 </span>
               </div>
-              <div className="flex items-center gap-1 bg-[#0b1017] px-2.5 py-1 rounded border border-[#1c2636] text-xs font-mono">
-                <span className="text-slate-500">ROLE:</span>
-                <select value={role} onChange={e => setRole(e.target.value)} className="bg-transparent text-slate-200 font-semibold cursor-pointer focus:outline-none">
-                  <option value="analyst" className="bg-[#0b1017]">Analyst (Tier 2)</option>
-                  <option value="approver" className="bg-[#0b1017]">Approver / Admin</option>
-                  <option value="auditor" className="bg-[#0b1017]">Compliance Auditor</option>
-                </select>
+              <div className="flex items-center gap-1.5 bg-[#0b1017] px-2.5 py-1 rounded border border-[#1c2636] text-xs font-mono">
+                <span className="text-slate-500">USER:</span>
+                {session && session.authenticated ? (
+                  <React.Fragment>
+                    <span className="text-slate-200 font-semibold">{session.username}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#102a1c] text-emerald-400 border border-[#1b5e20] uppercase font-bold">
+                      {session.role}
+                    </span>
+                    <button onClick={handleLogout} className="text-red-400 hover:text-red-300 font-bold ml-1">[LOGOUT]</button>
+                  </React.Fragment>
+                ) : (
+                  <React.Fragment>
+                    <span className="text-red-400 font-semibold">NOT SIGNED IN</span>
+                    <button onClick={() => { setLoginError(null); setLoginOpen(true); }} className="text-sky-400 hover:text-sky-300 font-bold ml-1">[LOGIN]</button>
+                  </React.Fragment>
+                )}
               </div>
               <button
-                onClick={() => setIsUploadOpen(true)}
+                onClick={() => session && session.authenticated ? setIsUploadOpen(true) : showToast("Error: Sign in with an analyst account before uploading samples.")}
                 className="flex items-center gap-1.5 px-3 py-1 rounded bg-[#1565c0] hover:bg-[#1976d2] text-white text-xs font-mono font-bold transition shadow-sm cursor-pointer"
               >
                 <span>+ Upload Sample</span>
@@ -867,6 +919,52 @@
               <a href="/docs" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300 transition underline">API Docs</a>
             </div>
           </footer>
+
+          {/* Login Modal */}
+          {loginOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 anim-layer-1">
+              <div className="bg-[#0b1017] border border-[#1c2636] rounded-lg max-w-sm w-full p-6 space-y-4 shadow-2xl">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-mono font-bold text-slate-100 tracking-widest uppercase">Console Sign-In</h2>
+                  <button onClick={() => setLoginOpen(false)} className="text-slate-500 hover:text-slate-300 font-mono text-sm">[X]</button>
+                </div>
+                {loginError && (
+                  <div className="p-2 rounded bg-[#2d0a0a] border border-[#b71c1c] text-red-400 text-xs font-mono">{String(loginError)}</div>
+                )}
+                <form onSubmit={handleLogin} className="space-y-3">
+                  <div>
+                    <label className="block text-[10px] font-mono text-slate-500 uppercase mb-1">Username</label>
+                    <input
+                      value={loginUsername}
+                      onChange={e => setLoginUsername(e.target.value)}
+                      autoFocus
+                      required
+                      className="w-full p-2 bg-[#080c14] border border-[#1c2636] rounded text-slate-100 text-sm font-mono focus:outline-none focus:border-[#1565c0]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono text-slate-500 uppercase mb-1">Password</label>
+                    <input
+                      type="password"
+                      value={loginPassword}
+                      onChange={e => setLoginPassword(e.target.value)}
+                      required
+                      className="w-full p-2 bg-[#080c14] border border-[#1c2636] rounded text-slate-100 text-sm font-mono focus:outline-none focus:border-[#1565c0]"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full py-2 rounded bg-[#1565c0] hover:bg-[#1976d2] text-white text-xs font-mono font-bold transition"
+                  >
+                    SIGN IN
+                  </button>
+                </form>
+                <p className="text-[10px] font-mono text-slate-600">
+                  First run prints a one-time admin password to the server console, or set TRAC_BOOTSTRAP_ADMIN_PASSWORD.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Upload Modal */}
           {isUploadOpen && (

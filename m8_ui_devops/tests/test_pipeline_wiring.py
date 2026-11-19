@@ -221,6 +221,23 @@ class UploadRouteTests(unittest.TestCase):
         app.dependency_overrides[get_db] = override_get_db
         self.client = TestClient(app)
 
+        # The upload route requires a signed-in console operator; create the
+        # bootstrap admin in the test database and establish a session cookie.
+        os.environ["TRAC_BOOTSTRAP_ADMIN_PASSWORD"] = "wiring-test-admin-pass"
+        self.addCleanup(self._pop_bootstrap_env)
+        from m8_ui_devops.auth import ensure_bootstrap_admin
+
+        with self.session_factory() as db:
+            ensure_bootstrap_admin(db)
+        login = self.client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "wiring-test-admin-pass"},
+        )
+        self.assertEqual(login.status_code, 200)
+
+    def _pop_bootstrap_env(self):
+        os.environ.pop("TRAC_BOOTSTRAP_ADMIN_PASSWORD", None)
+
     def _restore_vault_env(self):
         if self._old_vault is None:
             os.environ.pop("VAULT_STORAGE_PATH", None)
