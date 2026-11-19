@@ -1,0 +1,12 @@
+{
+  "event_id": "cd79840a-45f4-4c37-9b49-9debd5fb9783",
+  "type": "static.done",
+  "analysis_id": "4fc904a1-73d2-4c4e-8eb6-b02c837ea5c8",
+  "vault_id": "b2fc7cee-31ad-491d-9599-7654f2d4bc2b",
+  "emitted_at": "2026-11-19T08:44:24.432504+00:00",
+  "producer": "M2",
+  "contract_version": "1.0.0",
+  "payload": {
+    "section": "static"
+  }
+}

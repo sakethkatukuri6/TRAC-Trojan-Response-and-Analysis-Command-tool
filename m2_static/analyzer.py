@@ -416,7 +416,7 @@ def analyze_static(data: bytes, file_type: str, filename: str = "") -> dict:
         (``pe``, ``elf``, ``macho``, ``office``, ``pdf``,
         ``script``, ``archive``, ``other``).
     filename : str, optional
-        Original (sanitised) filename — used for display only.
+        Original (sanitised) filename, used for display only.
 
     Returns
     -------

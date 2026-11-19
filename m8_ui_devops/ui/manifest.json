@@ -1,0 +1,16 @@
+{
+  "name": "TRAC Threat Response & Analysis Command",
+  "short_name": "TRAC",
+  "description": "Enterprise malware analysis, IOC extraction, and incident response orchestration command console.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#06090e",
+  "theme_color": "#0b0f17",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

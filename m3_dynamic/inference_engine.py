@@ -394,3 +394,37 @@ def infer_behavior(data: bytes, file_type: str, static_result: Dict[str, Any], f
         return observed
     except Exception as exc:  # fail closed: a sandbox we cannot trust yields no dynamic claims
         return {"status": "failed", "_static_capabilities": capabilities, "_error": _safe_error(exc, token)}
+
+
+def check_cape_health(endpoint: Optional[str] = None, token: Optional[str] = None) -> Dict[str, Any]:
+    """Check health, availability, and queue depth of the CAPEv2 sandbox."""
+    ep = endpoint or os.getenv("TRAC_CAPE_URL") or os.getenv("CAPE_URL") or os.getenv("CAPE_API_URL")
+    tok = token or os.getenv("TRAC_CAPE_TOKEN") or os.getenv("CAPE_TOKEN")
+    if not ep or not ep.strip():
+        return {
+            "configured": False,
+            "online": False,
+            "status": "unconfigured",
+            "message": "TRAC_CAPE_URL is not configured; dynamic analysis runs will be skipped.",
+        }
+    try:
+        root = cape_api_root(ep)
+        status_resp = _cape_request(root, "/cuckoo/status/", tok, timeout=PREFLIGHT_TIMEOUT_S)
+        data = status_resp.get("data") if isinstance(status_resp.get("data"), dict) else status_resp
+        return {
+            "configured": True,
+            "online": True,
+            "status": "ready",
+            "endpoint": ep,
+            "version": data.get("version", "unknown"),
+            "machines": data.get("machines", {}),
+            "queues": data.get("queues", {}),
+        }
+    except Exception as exc:
+        return {
+            "configured": True,
+            "online": False,
+            "status": "offline",
+            "endpoint": ep,
+            "error": _safe_error(exc, tok),
+        }

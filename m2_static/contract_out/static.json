@@ -1,0 +1,21 @@
+{
+  "static": {
+    "status": "done",
+    "file_class": "script",
+    "entropy": 5.1453,
+    "strings": {
+      "count": 109,
+      "interesting": [
+        "headers, sections, import descriptors and the import hash rather than emitting",
+        "IMPORT_DESCRIPTOR_SIZE = 20",
+        "    \"\"\"Lay out import descriptors, DLL names, ILTs, IATs and import-by-names.\"\"\"",
+        "    descriptors_length = IMPORT_DESCRIPTOR_SIZE * (len(IMPORTS) + 1)",
+        "    offset = descriptors_length",
+        "        base = IMPORT_DESCRIPTOR_SIZE * index",
+        "    import_length = IMPORT_DESCRIPTOR_SIZE * (len(IMPORTS) + 1)"
+      ]
+    },
+    "embedded_urls": [],
+    "packers": []
+  }
+}

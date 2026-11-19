@@ -55,6 +55,37 @@ class TestConsoleOriginPolicy(unittest.TestCase):
         self.assertNotIn("*", cors[0].kwargs["allow_origins"])
         self.assertFalse(cors[0].kwargs["allow_credentials"])
 
+    def test_airgapped_vendor_assets_and_launch_gate_routes(self):
+        from fastapi.testclient import TestClient
+        from m8_ui_devops.cli import create_dashboard_app
+
+        app = create_dashboard_app(host="127.0.0.1", port=8088)
+        client = TestClient(app)
+
+        # Launch gates
+        self.assertEqual(client.get("/favicon.svg").status_code, 200)
+        self.assertEqual(client.get("/manifest.json").status_code, 200)
+        self.assertEqual(client.get("/privacy").status_code, 200)
+        self.assertEqual(client.get("/terms").status_code, 200)
+        self.assertEqual(client.get("/api/health").status_code, 200)
+        sandbox_res = client.get("/api/health/sandbox")
+        self.assertEqual(sandbox_res.status_code, 200)
+        self.assertIn("status", sandbox_res.json())
+
+        # Airgapped vendor static files
+        self.assertEqual(client.get("/vendor/react.production.min.js").status_code, 200)
+        self.assertEqual(client.get("/vendor/react-dom.production.min.js").status_code, 200)
+        self.assertEqual(client.get("/vendor/babel.min.js").status_code, 200)
+        self.assertEqual(client.get("/vendor/tailwind.min.js").status_code, 200)
+
+        # Standalone HTML must not reference public external CDNs
+        index_res = client.get("/")
+        self.assertEqual(index_res.status_code, 200)
+        html_text = index_res.text
+        self.assertNotIn("cdn.tailwindcss.com", html_text)
+        self.assertNotIn("unpkg.com", html_text)
+
+
 
 class TestM8SecurityDefenses(unittest.TestCase):
     def test_upload_cap_is_the_contract_number(self):

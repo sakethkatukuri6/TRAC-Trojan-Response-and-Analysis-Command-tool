@@ -4,20 +4,20 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TRAC // Threat Response & Analysis Command Console</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="manifest" href="/manifest.json" />
+  <!-- Offline Airgapped Vendor Assets -->
+  <script src="/vendor/tailwind.min.js"></script>
+  <script src="/vendor/react.production.min.js"></script>
+  <script src="/vendor/react-dom.production.min.js"></script>
+  <script src="/vendor/babel.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
           fontFamily: {
-            sans: ["Roboto", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
-            mono: ["'Roboto Mono'", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+            sans: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif"],
+            mono: ["'Cascadia Code'", "'Roboto Mono'", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
           }
         }
       }
@@ -102,11 +102,20 @@
       );
     }
 
+    function getQueryParam(key, defaultValue = "") {
+      try {
+        const val = new URLSearchParams(window.location.search).get(key);
+        return val ? String(val) : defaultValue;
+      } catch (err) {
+        return defaultValue;
+      }
+    }
+
     function App() {
       const [summaries, setSummaries] = useState([]);
       const [views, setViews] = useState({});
       const [selectedId, setSelectedId] = useState(null);
-      const [activeTab, setActiveTab] = useState("overview");
+      const [activeTab, setActiveTab] = useState(() => getQueryParam("tab", "overview"));
       const [role, setRole] = useState("analyst");
       const [toast, setToast] = useState(null);
       const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -162,8 +171,10 @@
             setSummaries(list);
             setApiOnline(true);
             if (list.length) {
-              setSelectedId(list[0].analysis_id);
-              await loadAnalysis(list[0].analysis_id);
+              const urlId = getQueryParam("id", null);
+              const targetId = (urlId && list.some(s => s.analysis_id === urlId)) ? urlId : list[0].analysis_id;
+              setSelectedId(targetId);
+              await loadAnalysis(targetId);
             }
           } catch (err) {
             setApiOnline(false);
@@ -846,6 +857,16 @@
               </>
             )}
           </main>
+
+          {/* Platform Footer */}
+          <footer className="border-t border-[#1c2636] mt-8 py-4 px-6 text-xs font-mono text-slate-500 flex flex-wrap items-center justify-between gap-4">
+            <div>TRAC // Threat Response &amp; Analysis Command Platform</div>
+            <div className="flex items-center gap-4">
+              <a href="/privacy" className="hover:text-slate-300 transition underline">Privacy Policy</a>
+              <a href="/terms" className="hover:text-slate-300 transition underline">Terms of Service</a>
+              <a href="/docs" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300 transition underline">API Docs</a>
+            </div>
+          </footer>
 
           {/* Upload Modal */}
           {isUploadOpen && (

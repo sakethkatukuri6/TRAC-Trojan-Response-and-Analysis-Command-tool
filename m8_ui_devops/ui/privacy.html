@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy - TRAC Security Platform</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #0b0f17;
+      color: #cbd5e1;
+      line-height: 1.7;
+      margin: 0;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 8px;
+      padding: 48px;
+    }
+    h1 {
+      color: #f8fafc;
+      font-size: 28px;
+      font-weight: 700;
+      margin-top: 0;
+      border-bottom: 1px solid #1f2937;
+      padding-bottom: 16px;
+    }
+    h2 {
+      color: #38bdf8;
+      font-size: 18px;
+      font-weight: 600;
+      margin-top: 32px;
+      margin-bottom: 12px;
+    }
+    p, li {
+      color: #94a3b8;
+      font-size: 14.5px;
+    }
+    ul {
+      padding-left: 20px;
+    }
+    li {
+      margin-bottom: 8px;
+    }
+    .back-link {
+      display: inline-block;
+      margin-bottom: 24px;
+      color: #38bdf8;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .back-link:hover {
+      text-decoration: underline;
+    }
+    .meta-box {
+      background: #0f172a;
+      border-left: 3px solid #0284c7;
+      padding: 12px 16px;
+      margin: 20px 0;
+      font-size: 13px;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a href="/" class="back-link">&larr; Return to Command Console</a>
+    <h1>Privacy Policy &amp; Telemetry Notice</h1>
+    <div class="meta-box">
+      <strong>Effective Date:</strong> November 2026<br />
+      <strong>Scope:</strong> TRAC (Trojan Response and Analysis Command Platform) Ingestion, Analysis, and Vault Services
+    </div>
+
+    <h2>1. Data Processing Architecture</h2>
+    <p>TRAC is an automated malware analysis and incident response command platform. When security analysts upload suspected artifacts, binaries, or archives, the platform executes isolated static inspection, sandbox orchestration, and indicator extraction. This policy outlines how submission data, derived indicators of compromise, and telemetry are collected, processed, and preserved.</p>
+
+    <h2>2. Artifact Intake and Defanging</h2>
+    <p>All binary artifacts ingested through TRAC undergo immediate cryptographic hashing and security defanging:</p>
+    <ul>
+      <li><strong>Defanged Storage:</strong> Ingested binaries are XOR-defanged before serialization to eliminate execution capability and prevent host antivirus quarantine triggers.</li>
+      <li><strong>Encryption at Rest:</strong> Defanged samples are encrypted using authenticated symmetric cryptography (AES-128 / Fernet) in the secure vault.</li>
+      <li><strong>No File Path Leakage:</strong> Filesystem storage paths are never transmitted or published in analysis contracts. Samples are addressed strictly through deterministic UUID identifiers (vault_id).</li>
+    </ul>
+
+    <h2>3. Submitter Identity &amp; Anonymization</h2>
+    <p>TRAC records submitter attribution strictly when explicitly declared during ingestion. In accordance with zero-trust audit principles, synthetic identity creation is prohibited. Submitter information is maintained in tamper-evident database audit chains alongside timestamps and client origin records.</p>
+
+    <h2>4. Telemetry and Indicators of Compromise (IOCs)</h2>
+    <p>Analysis of submitted materials derives technical indicators including network IP addresses, domain names, file hashes, process execution trees, and MITRE ATT&amp;CK mappings. All derived IOC network indicators (domains, IPv4/IPv6 addresses, URLs) are automatically defanged (e.g., using bracket notation such as hxxp:// and dot-bracket domains) to prevent accidental navigation or click-through execution.</p>
+
+    <h2>5. Dynamic Sandbox Telemetry</h2>
+    <p>Dynamic analysis is delegated exclusively to operator-configured, network-isolated sandboxes (such as CAPEv2). Sandbox guests operate in isolated or simulated internet modes only. No live external network connectivity is permitted during automated detonation, ensuring that sample detonation does not leak analyst IP addresses or corporate telemetry to external threat infrastructure.</p>
+
+    <h2>6. Data Retention and Destruction</h2>
+    <p>Analyzed documents, telemetry, and vaulted samples are retained according to organizational data retention schedules. Authorized administrative personnel may purge individual analysis records and associated vault entries upon formal verification.</p>
+
+    <h2>7. Compliance and Security Contact</h2>
+    <p>For questions regarding security controls, audit logs, or data privacy practices within TRAC, contact the designated organizational security operations lead or review the project documentation.</p>
+  </div>
+</body>
+</html>

@@ -106,6 +106,11 @@ def create_dashboard_app(host: str = DEFAULT_UI_HOST, port: int = DEFAULT_UI_POR
     def health_check():
         return {"status": "ok", "module": "M8_UI_DEVOPS", "version": get_platform_version()}
 
+    @app.get("/api/health/sandbox", summary="CAPEv2 sandbox health and queue status")
+    def sandbox_health_check():
+        from m3_dynamic.inference_engine import check_cape_health
+        return check_cape_health()
+
     @app.get("/api/analyses", summary="List analyses persisted by M7")
     def list_analyses(db: Session = Depends(get_db)):
         return AnalysisService(db).list_analyses(limit=100)
@@ -162,11 +167,43 @@ def create_dashboard_app(host: str = DEFAULT_UI_HOST, port: int = DEFAULT_UI_POR
         html = generate_html_report(doc)
         return Response(content=html, media_type="text/html")
 
-    # The console is version controlled at ui/standalone.html, which renders the
-    # presentation M7/M8 produce. ui/dist is a stale React build whose screen
-    # invents verdicts and sandbox telemetry from the uploaded filename, so it is
-    # deliberately not served.
-    standalone_html = Path(__file__).resolve().parent / "ui" / "standalone.html"
+    # The console and static documentation assets are located in ui/
+    ui_dir = Path(__file__).resolve().parent / "ui"
+    standalone_html = ui_dir / "standalone.html"
+    privacy_html = ui_dir / "privacy.html"
+    terms_html = ui_dir / "terms.html"
+    favicon_svg = ui_dir / "favicon.svg"
+    manifest_json = ui_dir / "manifest.json"
+    vendor_dir = ui_dir / "vendor"
+
+    if vendor_dir.exists():
+        from fastapi.staticfiles import StaticFiles
+        app.mount("/vendor", StaticFiles(directory=str(vendor_dir)), name="vendor")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    @app.get("/favicon.svg", include_in_schema=False)
+    def serve_favicon():
+        if favicon_svg.exists():
+            return Response(content=favicon_svg.read_bytes(), media_type="image/svg+xml")
+        return Response(status_code=404)
+
+    @app.get("/manifest.json", include_in_schema=False)
+    def serve_manifest():
+        if manifest_json.exists():
+            return Response(content=manifest_json.read_bytes(), media_type="application/json")
+        return Response(status_code=404)
+
+    @app.get("/privacy", summary="Data privacy and sample telemetry policy")
+    def serve_privacy():
+        if privacy_html.exists():
+            return Response(content=privacy_html.read_text(encoding="utf-8"), media_type="text/html")
+        return Response(content="<h1>Privacy Policy</h1><p>Privacy policy documentation is being prepared.</p>", media_type="text/html")
+
+    @app.get("/terms", summary="Terms of service and acceptable use policy")
+    def serve_terms():
+        if terms_html.exists():
+            return Response(content=terms_html.read_text(encoding="utf-8"), media_type="text/html")
+        return Response(content="<h1>Terms of Service</h1><p>Terms of service documentation is being prepared.</p>", media_type="text/html")
 
     if standalone_html.exists():
         @app.get("/")

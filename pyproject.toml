@@ -1,0 +1,17 @@
+[tool.pytest.ini_options]
+testpaths = [
+    "contract/tests",
+    "m1_ingestion/tests",
+    "m2_static/tests",
+    "m3_dynamic/tests",
+    "m4_ioc/tests",
+    "m5_detection/tests",
+    "m6_response/tests",
+    "m7_core/tests",
+    "m8_ui_devops/tests",
+]
+filterwarnings = [
+    "ignore::starlette.exceptions.StarletteDeprecationWarning",
+    "ignore:Accessing argon2.__version__ is deprecated:DeprecationWarning",
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+]

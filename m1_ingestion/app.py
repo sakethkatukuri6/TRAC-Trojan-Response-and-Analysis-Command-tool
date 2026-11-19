@@ -52,7 +52,7 @@ def upload_sample(
         total_bytes += len(chunk)
         if total_bytes > MAX_FILE_SIZE:
             raise HTTPException(
-                status_code=HTTP_413,
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 detail=f"File exceeds the {MAX_FILE_SIZE} byte upload cap",
             )
         chunks.append(chunk)
@@ -60,7 +60,7 @@ def upload_sample(
     raw_data = b"".join(chunks)
     if len(raw_data) == 0:
         raise HTTPException(
-            status_code=HTTP_422,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Uploaded file is empty",
         )
 
@@ -72,7 +72,7 @@ def upload_sample(
         )
     except ValueError as exc:
         raise HTTPException(
-            status_code=HTTP_422,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         )
 

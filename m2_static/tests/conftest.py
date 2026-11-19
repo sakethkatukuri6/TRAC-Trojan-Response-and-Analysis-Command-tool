@@ -1,4 +1,8 @@
-import sys
-import os
+"""Pytest fixtures for M2 Static Analysis."""
+import pytest
+from m7_core.tests.benign_pe import build_benign_pe
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+@pytest.fixture
+def benign_pe_bytes():
+    return build_benign_pe()

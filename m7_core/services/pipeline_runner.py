@@ -33,7 +33,7 @@ from m7_core.contract.loader import get_contract_version
 
 logger = logging.getLogger(__name__)
 
-# MalwareBazaar — the feed this platform is normally fed from — protects its archives
+# MalwareBazaar (the feed this platform is normally fed from) protects its archives
 # with this word, so the intake screens default to it. TRAC_ARCHIVE_PASSWORD overrides
 # it for a source that uses another convention.
 DEFAULT_ARCHIVE_PASSWORD = os.getenv("TRAC_ARCHIVE_PASSWORD", "infected")
@@ -120,7 +120,24 @@ def _read_member(archive: Any, member: zipfile.ZipInfo, password: Optional[str])
     last_error: Optional[BaseException] = None
     for attempt in (pwd, None):
         try:
-            return archive.read(member) if attempt is None else archive.read(member, pwd=attempt)
+            chunks: List[bytes] = []
+            total_read = 0
+            with (archive.open(member) if attempt is None else archive.open(member, pwd=attempt)) as stream:
+                while True:
+                    chunk = stream.read(65536)
+                    if not chunk:
+                        break
+                    total_read += len(chunk)
+                    if total_read > MAX_FILE_SIZE:
+                        raise ArchiveRejected(
+                            "PAYLOAD_TOO_LARGE",
+                            f"{_member_basename(member.filename)} decompressed to {total_read} bytes "
+                            f"beyond the {MAX_FILE_SIZE} byte cap.",
+                        )
+                    chunks.append(chunk)
+            return b"".join(chunks)
+        except ArchiveRejected:
+            raise
         except Exception as exc:
             last_error = exc
     # The message never echoes the supplied password.
